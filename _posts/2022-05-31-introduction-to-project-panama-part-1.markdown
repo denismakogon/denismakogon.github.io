@@ -1,8 +1,9 @@
 ---
 layout: post
-title:  "Introduction to OpenJDK Project Panama. Part 1."
-date:   2022-05-27
-categories: panama openjdk
+title:  'Introduction to OpenJDK Project Panama. Part 1: "Hello World" application.'
+date:   2022-05-31
+categories: openjdk panama
+tags: ["openjdk", "panama"]
 ---
 
 ![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
@@ -21,7 +22,7 @@ Project Panama is meant to be a bridge between two worlds: the JVM and native co
 So, Panama consists of 3 components:
   * Foreign Function & Memory API: [JEP 424](https://openjdk.java.net/jeps/424)
   * Vector API: [JEP 338](https://openjdk.java.net/jeps/338)
-  * Jextract tool
+  * [Jextract tool](https://github.com/openjdk/jextract)
 
 ## Where to start?
 
@@ -252,32 +253,32 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 
 
 public class Examples {
-    private static final Linker linker = Linker.nativeLinker();
-    private static final SymbolLookup linkerLookup = linker.defaultLookup();
-    private static final SymbolLookup systemLookup = SymbolLookup.loaderLookup();
-    private static final SymbolLookup symbolLookup = name ->
-            systemLookup.lookup(name).or(() -> linkerLookup.lookup(name));
-    private static final FunctionDescriptor printfDescriptor = FunctionDescriptor.of(
-            JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-    );
+  private static final Linker linker = Linker.nativeLinker();
+  private static final SymbolLookup linkerLookup = linker.defaultLookup();
+  private static final SymbolLookup systemLookup = SymbolLookup.loaderLookup();
+  private static final SymbolLookup symbolLookup = name ->
+          systemLookup.lookup(name).or(() -> linkerLookup.lookup(name));
+  private static final FunctionDescriptor printfDescriptor = FunctionDescriptor.of(
+          JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
+  );
 
-    private static final MethodHandle printfMethodHandle = symbolLookup.lookup("printf").map(
-            addr -> linker.downcallHandle(addr, printfDescriptor)
-    ).orElse(null);
+  private static final MethodHandle printfMethodHandle = symbolLookup.lookup("printf").map(
+          addr -> linker.downcallHandle(addr, printfDescriptor)
+  ).orElse(null);
 
-    private static int printf(String str, SegmentAllocator allocator) throws Throwable {
-        Objects.requireNonNull(printfMethodHandle);
-        var cString = allocator.allocateUtf8String(str + "\n");
-        return (int) printfMethodHandle.invoke(cString);
+  private static int printf(String str, MemorySession memorySession) throws Throwable {
+    Objects.requireNonNull(printfMethodHandle);
+    var cString = memorySession.allocateUtf8String(str + "\n");
+    return (int) printfMethodHandle.invoke(cString);
+  }
+
+  public static void main(String[] args) throws Throwable {
+    var str = "hello world";
+    try (var memorySession = MemorySession.openConfined()) {
+      System.out.println(printf(str, memorySession));
     }
-
-    public static void main(String[] args) throws Throwable {
-        var str = "hello world";
-        try (var memorySession = MemorySession.openConfined()) {
-            var allocator = SegmentAllocator.newNativeArena(memorySession);
-            System.out.println(printf(str, allocator));
-        }
-    }
+  }
+  
 }
 ```
 
