@@ -12,94 +12,95 @@ on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_mediu
 
 [Introduction to OpenJDK Project Panama. Part 1.]({{ '/openjdk/panama/2022/05/29/introduction-to-project-panama-part-1.html' | relative_url }})
 
-## "Java-varargs to C-variadic" problem
+## "Native variadic functions in Java" problem
 
 ### C _printf_ is like _System.out::printf_
 
-In [Part 1]({{ '/openjdk/panama/2022/05/30/introduction-to-project-panama-part-1.html' | relative_url }}), you’ve learned how to performa a downcall to native code using Foreign Function and Memory Access APIs.
-Indeed, learning curve is pretty long, however, it’s not like the biggest issue, once you’ll go through it - it would be clear to you, that it was not the biggest problem comparing to what JNI was to most developers working with native code.
-
+In [Part 1]({{ '/openjdk/panama/2022/05/30/introduction-to-project-panama-part-1.html' | relative_url }}), you’ve learned how to perform a downcall to native code using Foreign Function and Memory Access APIs.
+Indeed, the learning curve is pretty long, however, it’s not the biggest issue, once you’ll go through it - it would be clear to you, that it was not the biggest problem compared to what JNI was to most developers working with native code.
 
 ### Revisiting _printf_ example
 
-In [Part 1]({{ '/openjdk/panama/2022/05/30/introduction-to-project-panama-part-1.html' | relative_url }}), I’ve shown you a simplified version of _printf_ that could be actually bound to Java’s _System.out::println_ 
-rather than to _System.out::printf_. What I did is I moved varargs out of scope of a hello-world application. 
-The reason for such move was a level of complex technical solutions that we need to dive into 
-(potentially, the complexity goes beyond typical scope of ordinary routine Java application development).
+Previously, I’ve shown you a simplified version of C _printf_ that is an equivalent Java’s _System.out::println_
+rather than to _System.out::printf_. 
 
-So, how can we turn Java varargs into C varargs? The answer is - through a reflection! 
-Now you see why I didn’t include this part into a hello-world app, because it would become a no longer hello-world, 
+What I did is I moved varargs out of the scope of a hello-world application.
+The reason for such a move was a level of complex technical solutions that we need to dive into
+(potentially, the complexity goes beyond boundaries of an ordinary routine Java application development).
+
+So, what's the process of invoking native variadic functions? The answer is - through a reflection!
+Now you see why I did not include this part into a hello-world app because it would become a no longer hello-world,
 but rather advanced Java development.
 
-At this moment we need to go back and look at couple things, first thing is the _printf_ **FunctionDescriptor**, 
-it has a following look:
+At this moment, we need to go back and look at a couple of things, first, is the _printf_ **FunctionDescriptor**:
 ```java
 FunctionDescriptor function = FunctionDescriptor.of(
         JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
 );
 ```
 There is no sign of varargs, right? This was done on purpose because at the moment of a **FunctionDescriptor** 
-declaration we don’t know exactly what kind of varargs we’ll get at an invocation stage.
+declaration we don’t know exactly what kind of vararg combination we’ll get at an invocation stage.
 
-Important note: the downcall works only with instances of classes that implement **Addressable** interface: 
-**MemorySegment** or **MemoryAddress**, these two Java types directly maps to a native memory segment (primitive types, structs) 
-or an address of it (pointers). So, before submitting these varargs we also need to make sure they aren’t 
-malformed and could be processed further down the pipe.
+Important note! According to **MethoHandle::invoke** signature, the downcall works only with instances 
+of classes that implement the **Addressable** interface (**MemorySegment** or **MemoryAddress**), 
+these two Java types representing a native memory (primitive types, structs)
+or an address of it (pointers to a memory segments). So, before passing down varargs from Java to a native function,
+we must need to make sure that variables hiding behind the varargs comply with the contract defined by FFI and FMA API.
 
-So, we perform perform a downcall to _print_ exactly as we declare it in **FunctionDescriptor** - 
+So, we must perform a downcall to C _print_ exactly as we declare it in **FunctionDescriptor** -
 _int_ as return type, _char *_ as an argument:
 ```java
 return (int) printfMethodHandle.invoke(cString);
 ```
 
-Assuming that in C we have variadic functions, we need to make sure that **MethodHandle::invokeExact** can accept varargs:
+Assuming that, in C, we have variadic functions, we need to make sure that **MethodHandle::invoke** accepts varargs:
 ```java
-public final native @PolymorphicSignature Object invokeExact(Object... args) throws Throwable;
+public final native @PolymorphicSignature Object invoke(Object... args) throws Throwable;
 ```
 
-As can you see, it doesn’t make a distinction between ordinary function args and varargs - 
-it only accepts the varargs, but that’s exactly what we need. However, this method performs a downcall that **exactly** 
-matches to a function descriptor. It means you need to have a function descriptor for any type of a varargs you’re about to pass.
+As can you see, it does not make a distinction between ordinary function args and varargs - 
+it only accepts the varargs, but that’s exactly what we need.
 
-From a software development standpoint, such approach eliminates the flexibility of variadic functions. 
-So, our job is to preserve the same developer experience as they had with C, 
-but this time writing a code full of downcalls in Java. That’s what we’re going to do through this post!
+From a software development standpoint, our job is to preserve the same developer experience offered in C/C++, 
+but this time creating applications full of downcalls to native functions, in Java. That's what exactly this post will be about!
 
-## "Java-varargs to C-variadic" solution
+## "Native variadic functions in Java" solution
 
 ### Problematic area
 
-#### **FunctionDescriptor** is not flexible
+#### Unpredictable combinations of varargs
 
 As I outlined above, the biggest issue is that we can't predict a set of varargs that'll be used in a downcall, therefore,
 we can't create a generic version of a **FunctionDescriptor** that will _just work_ for every possible invocation configuration. 
 So, if we can't build one then maybe we try creating a new function descriptor that extends the original descriptor for each invocation, dynamically.
 
-#### **MethodHandle** depends on a **FunctionDescriptor**
+#### **FunctionDescriptor** is a key part of **MethodHandle**
 
-A subsequent issue is that a native function method handle is provisioned from two objects: a native memory address and a function descriptor.
-As of now, we already know that we need a new descriptor version for every combination of named args and varargs.
+A subsequent issue is: a function descriptor is a key dependency of a native function method handle.
+As of now, we already know that we need a new descriptor every time we face with a new combination of varargs.
 
-Look at _printf_ method handle definition:
+Look at the _printf_ method handle definition:
 ```java
 MethodHandle printfMethodHandle = symbolLookup.lookup("printf").map(
         addr -> linker.downcallHandle(addr, printfDescriptor)
     ).orElse(null);
 ```
-A method handle depends on a descriptor!Taking into account that both method handle and a descriptor should 
-potentially be considered as static objects, we're eventually found ourselves in a situation when both of them aren't static any longer.
+A method handle depends on a descriptor! Taking into account that both method handle and a descriptor should 
+potentially be considered as static objects, we're eventually found ourselves in a situation when both of them aren't static any longer, 
+i.e., must be created all time we need to perform a downcall.
 
 ### Advanced **MethodHandle** usage
 
-Before jumping into the pool with alligators I'd like to show you a very simple application that implements the reflective access
-to a static member of a class.
+Let's do side-step and talk a bit about reflective access to a static member of a class which critical for further understanding varargs solution.
 
 #### Reflective access to members of a class
 
-Imagine a hello-world application, nothing special, a static function, an invocation of it from _main_, like a typical straightforward way of calling static member of a class.
-But there's one more way of call _helloWorld_ method without directly invoking it, but through its **MethodHandle**, 
-i.e., accessing to a member of a class using a method handle lookup, also known as a reflective member access operation,
-here's what I'm talking about:
+Imagine a hello-world application, nothing special - _main_ and _helloWorld_ static functions, _main_ invokes _helloWorld_
+like a typically straightforward way of calling a static member of a class.
+
+But there's one more way of calling _helloWorld_ method without directly invoking it, but through its **MethodHandle**,
+i.e., access to a member of a class using a method handle lookup - so-called reflective member access operation. 
+Here's what I'm talking about:
 ```java
 package com.openjdk.samples.panama.stdlib;
 
@@ -139,24 +140,22 @@ be called through its method handle.
 
 ### Creating reflected version on `invoke` method
 
-We know that **MethodHandle::invokeExact** only accepts varargs, even though it's not really an issue, 
+We know that **MethodHandle::invoke** accepts varargs, there are no named args, even though it's not an issue,
 but it's way better to have a specific version of `invoke` that matches a signature of a native function,
 i.e., makes a clear distinction between named and unnamed arguments.
 
-So, the idea is to create an `invoke` method of the following signature:
-```java
-Object invoke(SegmentAllocator allocator, Object[] args);
-```
-that we can update in a runtime with a corresponding function descriptor plus varargs (of type **Object[].class**).
+So, the idea is to dynamically create an `invoke` method that we can set up in a runtime with a corresponding function 
+descriptor holding all necessary named arguments plus varargs (of type **Object[].class**).
 
-At the same time `invoke` method must be responsible for creating a new function descriptor, 
-flattening both named and unnamed arguments into a form of **Object[]** to pass it down to a **MethodHandle::invokeExact**.
+At the same time `invoke` method must be responsible for creating a new function descriptor derived from the original one, 
+creating an array of type **Object[].class** containing named args followed by unnamed arguments, performing the actual downcall using **MethodHandle::invoke**.
 
-#### Reflecting redefinition of `invoke` based on a function descriptor
+#### `invoke` reflecting definition based on the original function descriptor
 
-The reflecting redefinition algorythm suppose to look like:
+The idea is: in a runtime, create an `invoke` method that will comply with a native function C interface. 
+So, the algorithm suppose to look like this:
 
-* through a reflection, create a method handle for `VarargsInvoker::invoke` method with the corresponding method type:
+* through the reflective access to a virtual member of a class, create a method handle for the `VarargsInvoker::invoke`:
 ```java
     static {
         try {
@@ -170,21 +169,13 @@ The reflecting redefinition algorythm suppose to look like:
     }
 ```
 
-* bind an **VarargsInvoker::invoke** method handle to an instance of **VarargsInvoker** class:
-```java
-    MethodHandle handle = INVOKE_MH
-            .bindTo(invoker)
-            .asCollector(Object[].class, function.argumentLayouts().size() + 1);
-```
-
-* create a method type that corresponds to a function descriptor in a format of an `VarargsInvoker::invoke` signature, starting from a return value layout:
+* create a method type that corresponds to a function descriptor starting from a carrier class standing behind the value layout:
 ```java
     MethodType mtype = MethodType.methodType(
         function.returnLayout().isPresent() ? carrier(function.returnLayout().get(), true) : void.class
     );
 ```
-in a context of _printf_, the ternary operator will give us an `int.class` while `mtype` will be hold an _int_ type representation as a return argument.
-
+in the context of _printf_, the ternary operator will give us an `int.class` while `mtype` will behold an _int_ type representation as a return argument.
 
 * append all class types based on the named args layouts to a method type:
 ```java
@@ -193,14 +184,9 @@ in a context of _printf_, the ternary operator will give us an `int.class` while
     }
 ```
 
-* don't forget to add one more argument - varargs:
+* append varargs placeholder:
 ```java
 mtype = mtype.appendParameterTypes(Object[].class);
-```
-
-* with the respect to **VarargsInvoker::invoke** signature, add a segment allocator as a first argument:
-```java
-mtype = mtype.insertParameterTypes(0, SegmentAllocator.class);
 ```
 
 * set a native function descriptor-based method type to a method handle:
@@ -208,23 +194,23 @@ mtype = mtype.insertParameterTypes(0, SegmentAllocator.class);
 return handle.asType(mtype); 
 ```
 
-By this moment we've built an `invoke` method that maps one-to-one to function descriptor, but with additional **Object[].class** as varargs type.
+By this moment we've built an `invoke` method that maps one-to-one to function descriptor, but with the additional **Object[].class** as varargs placeholder type.
 In the context of _printf_, vararg types for `invoke` would have the following look:
 ```java
 new Object[] {int.class, MemorySegment.class, Object[].class};
 ```
 
-Note: **VarargsInvoker** implementation available in Appendix 2.
+Note: complete **VarargsInvoker** implementation available in Appendix 2.
 
 
-#### `invoke` routine
+#### `invoke` responsibilities
 
 As I mentioned above, `invoke` must be responsible for two things:
-- recreate a function descriptor based on the original function descriptor and the actual varargs;
-- flattening both named args and varargs to pass them down to **MethodHandle::invoke** in a format of **Object[]**.
+- recreating a function descriptor based on the original function descriptor and the actual varargs;
+- creating an array of type **Object[].class** holding named args followed by varargs.
 
-`invoke` algorythm looks like this:
-* create a **MemoryLayout** array which size suppose to correspond to a number of both named args and varargs:
+`invoke` routine looks like this:
+* on the invocation, create a **MemoryLayout** array whose size suppose to correspond to a number of both named args and varargs:
 ```java
     int nNamedArgs = function.argumentLayouts().size();
     assert(args.length == nNamedArgs + 1);
@@ -232,7 +218,7 @@ As I mentioned above, `invoke` must be responsible for two things:
     int argsCount = nNamedArgs + unnamedArgs.length;
     MemoryLayout[] argLayouts = new MemoryLayout[nNamedArgs + unnamedArgs.length];
 ```
-* go through named args and varargs, fill a **MemoryLayout** array with the actual memory layouts of each arg:
+* loop through named args and varargs, fill a **MemoryLayout** array with the actual memory layouts of every arg:
 ```java
     int pos;
     for (pos = 0; pos < nNamedArgs; pos++) {
@@ -251,29 +237,29 @@ As I mentioned above, `invoke` must be responsible for two things:
     MethodHandle mh = LINKER.downcallHandle(symbol, f);
 ```
 
-* create a flat array containing both named args and varargs:
+* create a flat array containing both named args and varargs followed one by another:
 ```java
     Object[] allArgs = new Object[nNamedArgs + unnamedArgs.length];
     System.arraycopy(args, 0, allArgs, 0, nNamedArgs);
     System.arraycopy(unnamedArgs, 0, allArgs, nNamedArgs, unnamedArgs.length);
 ```
 
-* make a method handle accept **Object[]** of a fixed size, then perform an invocation of a native function with flattened args.
+* configure a method handle to accept **Object[]** of a fixed size, then perform an invocation of a native function with an array of args.
 ```java
     return mh.asSpreader(Object[].class, argsCount).invoke(allArgs);
 ```
 
-The whole idea is to hijack an invocation to a native method through its method handle in order build a derived 
-version of the original function description based on the given varargs. 
+The whole idea is to hijack an invocation to a native method through its method handle in order to build a desired 
+version of the original function description based on the given varargs.
 
 Note: **VarargsInvoker** implementation available in Appendix 2.
 
 
 ## Using **VarargsInvoker**
 
-Finally, we are at THAT moment when we can finally can use the **VarargsInvoker**!
-I'll skip a part where we create a linker, symbol lookups and so on (they remain the same from Part 1), 
-but still there are two topics to cover:
+Finally, we are at THAT moment when we can finally use the **VarargsInvoker**!
+I'll skip a part where we create a linker, symbol lookups, and so on (they remain the same from Part 1),
+but still, there are two topics to cover:
 * memory segments and addresses allocation;
 * invocation;
 
@@ -295,15 +281,15 @@ I will use **VarargsInvoker::make** method:
         });
     }
 ```
-A few things have changed, of course, you see varargs of a type **MethodAddress**. 
-If you'll look at **Varargs::variadicLayout** you'll notice that there are only three type can be processed further: _JAVA_LONG_, _JAVA_DOUBLE_ and **MemoryAddress**.
-The reason for such "limitation" is that the rest of Java types like **String**, **Integer** and so on, require a native memory allocation. 
-Therefore, for _printf_, I have limited a scope of types to **MemoryAddress** only as the code operates by **String** variables that require native memory segment allocation.
+A few things have changed, of course, you see varargs of a type **MethodAddress**.
+If you'll look at **Varargs::variadicLayout** you'll notice that there are only three types that can be processed further: _JAVA_LONG_, _JAVA_DOUBLE_, and **MemoryAddress**.
+The reason for such "limitation" is that the rest of the Java types like **String**, **Integer**, and so on, require a native memory allocation.
+Therefore, for _printf_, I have limited scope of types to **MemoryAddress** only as the code operates by **String** variables that require native memory segment allocation.
 
 ### Memory segment and address allocations
 
 What I'm trying to showcase, in C, would look like:
-<script style="width: 1px;max-width: 100%;min-width: 100%;overflow: hidden;" src="//onlinegdb.com/embed/js/CfJgjmy8-?theme=dark"></script>
+<script style="width: 1px;max-width: 100%;min-width: 100%;overflow: hidden;" src="//onlinegdb.com/embed/js/OQciSeTLn?theme=dark"></script>
 
 So, the _main_ would have the following representation:
 ```java
@@ -347,8 +333,13 @@ It may look quite complex when you see it for the first time,
 but it gets much better when you understand what are the critical issues and 
 how to build a unified interface between Java code and native variadic functions.
 
-The good thing about **VarargsInvoker** implementation is it can be used in both scenarios - when working with both 
-variadic and named-args-only native functions.
+The good thing about **VarargsInvoker** implementation is it can be used in all possible scenarios:
+a function with variadic only, named and variadic and, named only or no args.
+
+I know that such solutions go beyond ordinary software development,
+but things will get much and much simpler when you will introduce a new code tool to your portfolio - jextract!
+
+That's what I'm going to talk about in the next Part 3!
 
 ## Code listings
 
@@ -412,7 +403,9 @@ public class PrintfVariadic {
 
 ### Appendix 2: VarargsInvoker
 
-Disclaimer: this code IS a part generated classes, it belongs to Panama, but is not a part of the JDK or code tools.
+Disclaimer: this code is a modified version of **VarargsInvoker** that is a part generated sources.
+Technically, they belong to Panama, but are not a part of the JDK or code tools.
+Generated sources are not licensed.
 
 ```java
 package com.openjdk.samples.panama.stdlib;
