@@ -3,7 +3,11 @@
   <div class="wrapper">
     {%- assign default_paths = site.pages | map: "path" -%}
     {%- assign page_paths = site.header_pages | default: default_paths -%}
-    <a class="site-title" rel="author" href="{{ "/" | relative_url }}">{{ site.title | escape }}</a>
+    <div style="text-align: left">
+      <a class="site-title" rel="author" href="{{ "/" | relative_url }}">{{ site.title | escape }}
+        <img src="{{ '/assets/duke-grey.128.png' | relative_url }}" style="width: 6%; float: left; padding-right: 12px; padding-top: 10px; padding-bottom: 10px;">
+      </a>
+    </div>
 
     {%- if page_paths -%}
       <nav class="site-nav">
