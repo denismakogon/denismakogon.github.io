@@ -73,13 +73,13 @@ Linker offers a set of API methods designed to perform both down- and upcalls.
 While the **Linker** is like your cellphone - call whoever you want to, just dial in a proper phone number.
 The symbol lookup methods are like your phonebook - just provide a proper descriptor of who you want to call!
 
-To perform a downcall, you need a descriptor of a function you’d like to call, a native address allocated through a symbol lookup, 
+To perform a downcall, you need a descriptor of a function you’d like to call, a native address allocated through a symbol lookup,
 and a linker to create a method handle that you can invoke.
 
 To make it clear, let's briefly look at what both down- and up-calls are:
-* Downcall. [Wiki](https://en.wiktionary.org/wiki/downcall) says it's an event initiated from a high level subsystem, 
-in our case the JVM to a lower-level subsystem, like the OS kernel. I'll explain it later in the text in a context of Foreign Function & Memory API.
-* Upcall. Literally, the opposite thing to a downcall.
+* Downcall. [Wiki](https://en.wiktionary.org/wiki/downcall) says it's an event initiated from a high-level subsystem,
+  in our case the JVM to a lower-level subsystem, like the OS kernel. I'll explain it later in the text in the context of Foreign Function & Memory API.
+* Upcall. The opposite thing to a downcall.
 
 Let’s implement a classic C-style “hello world” but in Java:
 ```cpp
@@ -108,9 +108,9 @@ But I'll cover it in the following articles.
 
 ### Task: build a descriptor of a function you are calling.
 
-Once we know where C _printf_ resides, the second thing to do is to define _printf_ descriptor that consists of a result type and accepted parameters.
+Once we know where C _printf_ resides, the second thing to do is to define the _printf_ descriptor that consists of a result type and accepted parameters.
 If you're into C language, you know that functions like _printf_ are called variadic functions, in Java we call it a function with varargs,
-in the case of _printf_, it accepts a char pointer and varargs (I all cover it the next part).
+in the case of _printf_, it accepts a char pointer and varargs (I all cover it in the next part).
 
 Note: from a Java API standpoint it doesn't matter what type hides behind that pointer in C all pointers have the same layout (which could be 32/64 but is fixed by the platform).
 
@@ -143,8 +143,7 @@ OfInt JAVA_INT = new OfInt(ByteOrder.nativeOrder()).withBitAlignment(32);
 ```
 is an instance of a value layout whose carrier is **int.class**.
 With this layout we're telling to a **Linker** that we're creating a bridge between C _int32_
-and Java instance of 32-bit _int_ with a carrier class **int.class**. Later on you'll see how it's all connected!
-
+and Java instance of 32-bit _int_ with a carrier-class **int.class**. Later on, you'll see how it's all connected!
 
 ### Task: build a method handle from a function's native memory segment.
 
@@ -157,33 +156,33 @@ MethodHandle printfMethodHandle = symbolLookup.lookup("printf").map(
 What happens here is we build the _printf_ method handle out of a native memory segment of _printf_ and its simplified descriptor.
 Upon the unsuccessful lookup, we potentially will get a null method handle which would be a signal of an issue.
 
-So, at this stage I have introduced all necessery terms to explain what both down- and upcalls are, it terms of Java - 
-_downcall_ is an invocation of native function through a **MethodHandle** formed from a native function address and its Java version of a function descriptor.
-At the same time, the _upcall_ is an invocation of some code written in Java through a **MethodHandle** converted 
+So, at this stage, I have introduced all necessary terms to explain what both down- and upcalls are, in terms of Java -
+_downcall_ is an invocation of a native function through a **MethodHandle** formed from a native function address and its Java version of a function descriptor.
+At the same time, the _upcall_ is an invocation of some code written in Java through a **MethodHandle** converted
 into a native memory segment which could then be passed to native functions as a function pointer.
 
 
 ### Task: allocate a native memory.
 
-Okay, at this stage you may think we have pretty much everything we need to perform the actual downcall, but that's not all. 
-We need somehow to bind a Java objects to a native memory segments to make sure C _printf_ can access them.
+Okay, at this stage you may think we have pretty much everything we need to perform the actual downcall, but that's not all.
+We need somehow to bind Java objects to native memory segments to make sure C _printf_ can access them.
 Here’s the moment when we step into the area of **Foreign Memory Access API** (FMA)!
 
 Way back in time when I did C programming (in high school, honestly), a memory allocation and freeing were kinda painful
 because no matter how good you are you’d, eventually you will forget to allocate or free a memory which will cause a
 program to leak it or blow up with a segmentation fault.
 
-In Java, we traditionally relied on the GC to take care of memory cleaning up. 
+In Java, we traditionally relied on the GC to take care of memory cleaning up.
 In Panama, the FMA API helps to allocate a memory off-heap which is a crucial part of any native interop story!
 
 The FMA API allows to allocate and access memory segments, their addresses, and the shape of contiguous memory
 regions, located either on- or off- the Java heap.
 In concepts of Panama, all allocated memory segments must be bound to a specific memory session (**MemorySession**),
-in other terms, consider a session like a unified memory allocation tool, 
-for instance, C `malloc`, but auto-closable (thanks to Java try-with-resource syntax block).
+in other terms, consider a session like a unified memory allocation tool,
+for instance, C `malloc`, but auto-closable (thanks to Java try-with-resources syntax block).
 
-Last, but not the least important part of a program is a segment allocator derived from a memory session.
-By itself, a memory session serves the role a native memory allocation API:
+Last, but not least important part of a program is a segment allocator derived from a memory session.
+By itself, a memory session serves the role of a native memory allocation API:
 ```java
 try (var memorySession = MemorySession.openConfined()) {
     // memory allocation happening here
@@ -219,20 +218,20 @@ public static void main(String[] args) throws Throwable {
 
 Note that we are allowed to cast a return value to _int_, because of the value layout of a return value defined within _printf_ **FunctionDescriptor**.
 
-In a real life, instead of _int_ as a return value there possibly would be just a **MemorySegment** that you'd need to read
+In a real-life, instead of _int_ as a return value there possibly would be just a **MemorySegment** that you'd need to read
 from to get a value of a type (a struct, for instance). I'll show you more examples in the following parts!
 
 ### Task: get things together!
 
 Let's summarize a few key aspects of C programs written in Java:
 * it is necessary to outline that you need to start a memory session only when you are actually about to allocate memory segments,
-  so, an entry point to program should start with a session declaration;
+  so, an entry point to the program should start with a session declaration;
 * Use a session within the try-with-resource block to make sure that a session is closed once you're done;
 * It's up to use to decide which API to use to allocate memory segments - through an allocator or a session directly. Although, if you dig into the implementation you'll notice the **SegmentAllocator** has a couple of session safety checks.
 * Linker, symbol lookup objects, value/memory layouts, and method handles are the static object.
 
 
-Full code listing can be found below!
+The full code listing can be found below!
 
 ## Summary
 
