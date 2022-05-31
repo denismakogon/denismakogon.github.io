@@ -7,7 +7,7 @@ tags: ["openjdk", "panama"]
 ---
 
 ![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
-Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText) 
+Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 
 ## Intro
@@ -20,20 +20,20 @@ Time to talk about Project Panama, which APIs are going to be available for deve
 Project Panama is meant to be a bridge between two worlds: the JVM and native code written in other languages like C/C++.
 
 So, Panama consists of 3 components:
-  * Foreign Function & Memory API: [JEP 424](https://openjdk.java.net/jeps/424)
-  * Vector API: [JEP 338](https://openjdk.java.net/jeps/338)
-  * [Jextract tool](https://github.com/openjdk/jextract)
+* Foreign Function & Memory API: [JEP 424](https://openjdk.java.net/jeps/424)
+* Vector API: [JEP 338](https://openjdk.java.net/jeps/338)
+* [Jextract tool](https://github.com/openjdk/jextract)
 
 ## Where to start?
 
-First, you would need the latest [OpenJDK early access build](https://jdk.java.net/19/). 
+First, you would need the latest [OpenJDK early access build](https://jdk.java.net/19/).
 It already has the necessary features we need to start coding.
 
 ## What you need to know
 
-When you actually bury your hand into these APIs you will need to operate with a couple of major entities:
+When you bury your hand into these APIs you will need to operate with a couple of major entities:
 * [Memory segment](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySegment.html) and [its address](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryAddress.html) - a set of API classes to work with native memory and pointer to it;
-* [Memory layout](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryLayout.html) and [descriptors](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html) - an APIs to model foreign types (structures, primitives, function descriptors). 
+* [Memory layout](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryLayout.html) and [descriptors](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html) - APIs to model foreign types (structures, primitives, function descriptors).
 * [Memory session](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySession.html) - an abstraction to manage the lifecycle of one or more memory resources;
 * [Linker](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Linker.html) and a [symbol lookup](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SymbolLookup.html) - a set of API classes to perform down- and upcalls.
 * [Segment allocator](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SegmentAllocator.html) - an API to allocate memory segments within a memory session;
@@ -49,7 +49,7 @@ These three major components of Panama are building blocks for more in-depth dev
 ## Linker
 
 Let's start from the very beginning: what Foreign Linker is?
-From a technical standpoint, we’re talking about a _“bridge”_ between two binary interfaces: the JVM and C/C++ native code, 
+From a technical standpoint, we’re talking about a _“bridge”_ between two binary interfaces: the JVM and C/C++ native code,
 also known as [C ABI](https://en.wikipedia.org/wiki/Application_binary_interface).
 
 In a real-life, developers will work with C/C++ native code in a format of shared libraries of a platform-specific format (`*.so, *.dylib, *.dll`) and their header files.
@@ -86,7 +86,7 @@ Let’s implement a classic C-style “hello world” but in Java:
 int     printf(const char * __restrict, ...)
 ```
 
-## HelloWold C-style in Java
+## HelloWorld C-style in Java
 
 
 ### Task: find the address of the native function.
@@ -142,7 +142,7 @@ As per Javadoc, `JAVA_INT`
 OfInt JAVA_INT = new OfInt(ByteOrder.nativeOrder()).withBitAlignment(32);
 ```
 is an instance of a value layout whose carrier is **int.class**.
-With this layout we're telling to a **Linker** that we're creating a bridge between C _int32_
+With this layout we're telling a **Linker** that we're creating a bridge between C _int32_
 and Java instance of 32-bit _int_ with a carrier-class **int.class**. Later on, you'll see how it's all connected!
 
 ### Task: build a method handle from a function's native memory segment.
@@ -190,10 +190,10 @@ try (var memorySession = MemorySession.openConfined()) {
 }
 ```
 
-As I was told by Panama developers, there are so many ways to do what you need in a right way especially in terms of memory allocation.
-One of possible memory allocation methods in Java is **SegmentAllocator**, it is similar to **MemorySession**,
-but often used in a context of other C memory allocation functions different from C [malloc](https://en.cppreference.com/w/c/memory/malloc).
-For the simplicity of a hello-world application we will use **MemorySession** as a memory segment allocation tool.
+As I was told by Panama developers, there are so many ways to do what you need in the right way, especially in terms of memory allocation.
+One of the possible memory allocation methods in Java is **SegmentAllocator**, which is similar to **MemorySession**,
+but often used in the context of other C memory allocation functions different from C [malloc](https://en.cppreference.com/w/c/memory/malloc).
+For the simplicity of a hello-world application, we will use **MemorySession** as a memory segment allocation tool.
 
 Finally, to call C _printf_ we need to allocate _const char *_ memory segment within a memory session using **MemorySession** and pass it to C _printf_ function:
 ```java
