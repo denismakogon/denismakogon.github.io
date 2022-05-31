@@ -10,35 +10,9 @@ tags: ["openjdk", "panama"]
 Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText) 
 on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 
-## Intro
-
-As of now (end of May), we’re less than 4 months away from the JDK 19 release.
-Time to talk about Project Panama, which APIs are going to be available for developers and how can developers use it even now.
-
-## Project Panama
-
-Project Panama is meant to be a bridge between two worlds: the JVM and native code written in other languages like C/C++.
-
-So, Panama consists of 3 components:
-  * Foreign Function & Memory API: [JEP 424](https://openjdk.java.net/jeps/424)
-  * Vector API: [JEP 338](https://openjdk.java.net/jeps/338)
-  * [Jextract tool](https://github.com/openjdk/jextract)
-
-## Where to start?
-
-First, you would need the latest [OpenJDK early access build](https://jdk.java.net/19/). 
-It already has the necessary features we need to start coding.
-
-## What you need to know
-
-When you actually bury your hand into these APIs you will need to operate with a couple of major entities:
-* [Memory segment](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySegment.html) and [its address](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryAddress.html) - a set of API classes to work with native memory and pointer to it;
-* [Memory layout](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryLayout.html) and [descriptors](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html) - an APIs to model foreign types (structures, primitives, function descriptors). 
-* [Memory session](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySession.html) - an abstraction to manage the lifecycle of one or more memory resources;
-* [Linker](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Linker.html) and a [symbol lookup](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SymbolLookup.html) - a set of API classes to perform down- and upcalls.
-* [Segment allocator](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SegmentAllocator.html) - an API to allocate memory segments within a memory session;
-
 ## Part 1
+
+Before you start working with Project Panama, it's critical to have a proper introduction, as many concepts aren't familiar to most Java developers. This will help make sure you under
 
 As the further you dig, the more you see that to start working with Panama properly, it's so critical to have a good introduction
 just to make sure you haven't missed important concepts, techniques, and methodologies.
@@ -48,7 +22,7 @@ These three major components of Panama are building blocks for more in-depth dev
 
 ## Linker
 
-Let's start from the very beginning: what Foreign Linker is?
+Let's start from the very beginning: what is Foreign Linker?
 From a technical standpoint, we’re talking about a _“bridge”_ between two binary interfaces: the JVM and C/C++ native code, 
 also known as [C ABI](https://en.wikipedia.org/wiki/Application_binary_interface).
 
