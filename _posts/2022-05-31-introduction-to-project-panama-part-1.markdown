@@ -249,6 +249,8 @@ So, there are a couple of main questions to be answered during the software deve
 
 ## Code listing
 
+You may find sources for this chapter here [github.com/denismakogon/openjdk-project-samples](https://github.com/denismakogon/openjdk-project-samples/blob/master/Panama.md#openjdk-panama-part-1).
+
 ```java
 package com.openjdk.samples.panama.stdlib;
 
