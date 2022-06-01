@@ -30,7 +30,7 @@ So, Panama consists of 3 components:
 * the [Jextract tool](https://github.com/openjdk/jextract)
 * The Vector API: [JEP 338](https://openjdk.java.net/jeps/338)
 
-The Foreign Function Interface & Memory Access API uses some key abstractions:
+The Foreign Function & Memory API uses some key abstractions:
 * [Memory segment](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySegment.html) and [its address](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryAddress.html) - a set of API classes to work with native memory and pointer to it;
 * [Memory layout](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryLayout.html) and [descriptors](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html) - APIs to model foreign types (structures, primitives) and function descriptors.
 * [Memory session](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySession.html) - an abstraction to manage the lifecycle of one or more memory resources;
