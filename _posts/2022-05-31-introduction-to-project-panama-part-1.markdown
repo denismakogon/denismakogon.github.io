@@ -219,7 +219,6 @@ A memory session should be declared with a try-with-resources to achieve implici
 There are several options to allocate memory segments - through a segment allocator or a memory session directly.
 The Linker, symbol lookup objects, value/memory layouts, and method handles are static objects.
 
-The full code listing can be found below!
 
 ## Summary
 
@@ -239,44 +238,4 @@ Several points need to be tackled when invoking native code from Java using the 
 ## Code listing
 
 You may find sources for this chapter here [github.com/denismakogon/openjdk-project-samples](https://github.com/denismakogon/openjdk-project-samples/blob/master/Panama.md#openjdk-panama-part-1).
-
-```java
-package com.openjdk.samples.panama.stdlib;
-
-import java.lang.foreign.*;
-import java.lang.invoke.MethodHandle;
-import java.util.Objects;
-
-import static java.lang.foreign.ValueLayout.ADDRESS;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
-
-
-public class Examples {
-  private static final Linker linker = Linker.nativeLinker();
-  private static final SymbolLookup linkerLookup = linker.defaultLookup();
-  private static final SymbolLookup systemLookup = SymbolLookup.loaderLookup();
-  private static final SymbolLookup symbolLookup = name ->
-          systemLookup.lookup(name).or(() -> linkerLookup.lookup(name));
-  private static final FunctionDescriptor printfDescriptor = FunctionDescriptor.of(
-          JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-  );
-
-  private static final MethodHandle printfMethodHandle = symbolLookup.lookup("printf").map(
-          addr -> linker.downcallHandle(addr, printfDescriptor)
-  ).orElse(null);
-
-  private static int printf(String str, MemorySession memorySession) throws Throwable {
-    Objects.requireNonNull(printfMethodHandle);
-    var cString = memorySession.allocateUtf8String(str + "\n");
-    return (int) printfMethodHandle.invoke(cString);
-  }
-
-  public static void main(String[] args) throws Throwable {
-    var str = "Hello World";
-    try (var memorySession = MemorySession.openConfined()) {
-      System.out.println(printf(str, memorySession));
-    }
-  }
-  
-}
-```
+<script src="https://emgithub.com/embed.js?target=https%3A%2F%2Fgithub.com%2Fdenismakogon%2Fopenjdk-project-samples%2Fblob%2Fmaster%2Fsrc%2Fmain%2Fjava%2Fcom%2Fopenjdk%2Fsamples%2Fpanama%2Fpart_1%2FPrintfSimplified.java&style=github&showBorder=off&showLineNumbers=off&showFileMeta=on&showCopy=on"></script>
