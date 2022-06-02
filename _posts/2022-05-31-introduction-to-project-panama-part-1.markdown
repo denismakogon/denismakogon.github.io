@@ -87,8 +87,9 @@ To write a Java-based Hello World that uses native printf functions, we need to:
 
 ### 1. Find the address of the native function.
 
-First, we need to lookup the native memory address of the _printf_ function:
+First, we need to lookup the native memory address of the [_printf_](https://www.cplusplus.com/reference/cstdio/printf/) function:
 ```java
+Linker linker = Linker.nativeLinker();
 SymbolLookup linkerLookup = linker.defaultLookup();
 SymbolLookup systemLookup = SymbolLookup.loaderLookup();
 
@@ -98,22 +99,20 @@ SymbolLookup symbolLookup = name ->
 Optional<MemorySegment> printfMemorySegment = symbolLookup.lookup("printf");
 ```
 
-Since [_printf_](https://www.cplusplus.com/reference/cstdio/printf/) is part of standard C stdlib.
 Technically, a lookup may fail, properly handling such failure will be covered in an upcoming article.
 
 ### 2. Build a descriptor of a function you are calling.
 
-Once we know where C printf resides, we need to define the _printf_ descriptor that consists of a result type and accepted parameters.
-In Java, a method that accepts variables set of parameters is called a varargs method, the equivalent in C (ex. _printf_) is called a variadic function.
-
-Note: from a Java runtime standpoint, it doesn't matter what value type stands behind a C pointer because a memory layout of a C pointer does not hold the type but a 32/64-bit value fixed by the platform.
+Once we know where _C printf_ resides, we need to define the _printf_ descriptor that consists of a result type and accepted parameters.
+It's worth to mention that native functions like _printf_ called as variadic functions.
+In Java, a method that accepts variables set of parameters is called a method with varargs.
 
 To simplify, we can define a simplified version of **FunctionDescriptor** for _printf_:
 ```java
-FunctionDescriptor printfDescriptor = FunctionDescriptor.of(
-        JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-    );
+FunctionDescriptor printfDescriptor = FunctionDescriptor.of(JAVA_INT, ADDRESS);
 ```
+
+Note: from a Java runtime standpoint, it doesn't matter what value type stands behind a C pointer because a memory layout of a C pointer does not hold the type but a 32/64-bit value fixed by the platform.
 
 A descriptor defines a function whose return value is _int_, and its parameter is a pointer.
 Given descriptor _almost_ corresponds to its C definition from [stdio.h](https://www.cplusplus.com/reference/cstdio/printf/),
