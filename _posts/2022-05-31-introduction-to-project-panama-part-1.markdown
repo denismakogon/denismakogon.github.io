@@ -31,11 +31,11 @@ So, Panama consists of 3 components:
 * The Vector API: [JEP 338](https://openjdk.java.net/jeps/338)
 
 The Foreign Function & Memory API uses some key abstractions:
-* [Memory segment](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySegment.html) and [its address](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryAddress.html) - a set of API classes to work with native memory and pointer to it;
-* [Memory layout](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryLayout.html) and [descriptors](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html) - APIs to model foreign types (structures, primitives) and function descriptors.
-* [Memory session](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySession.html) - an abstraction to manage the lifecycle of one or more memory resources;
-* [Linker](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Linker.html) and a [symbol lookup](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SymbolLookup.html) - a set of API classes to perform down- and upcalls.
-* [Segment allocator](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SegmentAllocator.html) - an API to allocate memory segments within a memory session;
+* [Memory segment](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySegment.html) and [its address](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryAddress.html) -- A set of API classes to work with native memory and pointer to it,
+* [Memory layout](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemoryLayout.html) and [descriptors](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html) -- APIs to model foreign types (structures, primitives) and function descriptors,
+* [Memory session](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/MemorySession.html) - An abstraction to manage the lifecycle of one or more memory resources,
+* [Linker](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Linker.html) and a [symbol lookup](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SymbolLookup.html) -- A set of API classes to perform down- and upcalls,
+* [Segment allocator](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/SegmentAllocator.html) -- An API to allocate memory segments within a memory session.
 
 Note: The Vector API is not a part of an article series.
 
@@ -63,11 +63,13 @@ public static Linker getSystemLinker() {
 }
 ```
 
+
 In the JDK terminology, a [**Linker**]((https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Linker.html)) is an instance of the platform-specific C ABI implementation.
 A Linker provides a set of methods to perform both downcalls and upcalls, where:
 * A _downcall_ is an event initiated from a high-level subsystem,
   in our case the JVM to a lower-level subsystem, like the OS kernel, or some Java code invoking some native code. This will be illustrated later with the Foreign Function & Memory API.
 * An _upcall_, for example some native code invoking some Java code.
+
 
 While the **Linker** is like your telephone - call whoever you want to, just dial in a proper phone number.
 The symbol lookup methods are like your phonebook — just provide a proper descriptor of whom you want to call.
@@ -98,12 +100,13 @@ SymbolLookup symbolLookup = name ->
 Optional<MemorySegment> printfMemorySegment = symbolLookup.lookup("printf");
 ```
 
+
 Technically, a lookup may fail, so properly handling such failure will be covered in an upcoming article.
 
 ### 2. Build a descriptor of a function you are calling.
 
 Once we know where _C printf_ resides, we need to define the _printf_ descriptor that consists of a result type and accepted parameters.
-It's worth to mention that native functions like _printf_ called as variadic functions.
+It's worth mentioning that native functions like _printf_ called as variadic functions.
 In Java, a method that accepts variable set of parameters is called a method with varargs.
 
 To simplify, we can define a simplified version of **FunctionDescriptor** for _printf_:
@@ -111,10 +114,11 @@ To simplify, we can define a simplified version of **FunctionDescriptor** for _p
 FunctionDescriptor printfDescriptor = FunctionDescriptor.of(JAVA_INT, ADDRESS);
 ```
 
+
 Note: From a Java runtime standpoint, it doesn't matter what value type stands behind a C pointer because a memory layout of a C pointer does not hold the type but a 32/64-bit value fixed by the platform.
 
-A descriptor defines a function that return value type is _int_, and its parameter is a pointer.
-Given descriptor _almost_ corresponds to its C definition from [stdio.h](https://www.cplusplus.com/reference/cstdio/printf/),
+A descriptor defines a function that returns a value type is _int_, and its parameter is a pointer.
+Given that a descriptor _almost_ corresponds to its C definition from [stdio.h](https://www.cplusplus.com/reference/cstdio/printf/),
 because it defines a standard function while _printf_ is a variadic function.
 In Part 2 of this series we will explain how to implement C variadic functions in Java.
 
@@ -169,16 +173,16 @@ Both memory allocation and freeing memory in C were painful because developers c
 which will cause a program to leak or blow up with a segmentation fault.
 
 On the other hand, Java relies on a Garbage Collector to allocate and free memory. But Panama’s Foreign Function & Memory API allocates memory off-heap.
-In Panama, the Foreign Function & Memory API helps to allocate a memory off-heap which is a crucial part of any native interop story!
+In Panama, the Foreign Function & Memory API helps to allocate a memory off-heap, which is a crucial part of any native interop story!
 
 The Foreign Function & Memory API allows developers to allocate and access memory segments, their addresses, and the shape of contiguous memory
 regions located either on or off the heap.
 All allocated memory segments are bound to a specific memory session (**MemorySession**). An instance of a memory session offers a set of APIs to allocate native memory segments.
 Consider a memory session like a unified memory allocation tool, like C `malloc`.
-MemorySession implements the AutoClosable interface which greatly simplifies de-allocation using the try-with-resources construct.
+MemorySession implements the AutoClosable interface, which greatly simplifies de-allocation using the try-with-resources construct.
 
-The Foreign Function & Memory API offers more than one right way to allocate a memory segment,
-one of the possible native memory allocation methods is **SegmentAllocator** which is similar to **MemorySession**:
+The Foreign Function & Memory API offers more than one right way to allocate a memory segment.
+One of the possible native memory allocation methods is **SegmentAllocator**, which is similar to **MemorySession**:
 ```java
 try (var memorySession = MemorySession.openConfined()) {
     SegmentAllocator allocator = SegmentAllocator.newNativeArena(memorySession);
@@ -186,6 +190,8 @@ try (var memorySession = MemorySession.openConfined()) {
     var cStringFromSession = memorySession.allocateUtf8String("Hello World" + "\n");
 }
 ```
+
+
 For the sake of simplicity, this "Hello World" application will use **MemorySession** as a memory segment allocation tool.
 
 Finally, to call C _printf_ we need to allocate _const char *_ memory segment within a memory session using **MemorySession** and pass it to C _printf_ function:
@@ -213,7 +219,7 @@ public static void main(String[] args) throws Throwable {
 
 What we've learned by this point is that a memory session (**MemorySession**), or a segment allocator (**SegmentAllocator**) are key APIs to perform memory allocation.
 A memory session should be declared with a try-with-resources to achieve implicit memory de-allocation.
-There are several options to allocate memory segments - through a segment allocator or a memory session directly.
+There are several options to allocate memory segments -- through a segment allocator or a memory session directly.
 The Linker, symbol lookup objects, value and memory layouts, and method handles are static objects.
 
 
@@ -225,11 +231,10 @@ The good news is that developers can rely on the [jextract](https://github.com/o
 Jextract will be covered in an upcoming article.
 
 Several points need to be tackled when invoking native code from Java using the Foreign Function & Memory API:
-* Get the native library and its corresponding header files;
-* Build a function descriptor in Java (**FunctionDescriptor**);
-* Lookup native memory address of a function symbol, and create a method handle for it;
-* Create a related method handle and confirm that it has been properly created (ex. if the native library is not in the system path,
-  the lookup will fail and the return a method handle will be null);
+* Get the native library and its corresponding header files.
+* Build a function descriptor in Java (**FunctionDescriptor**).
+* Lookup native memory address of a function symbol, and create a method handle for it.
+* Create a related method handle and confirm that it has been properly created (e.g., if the native library is not in the system path, the lookup will fail and the return a method handle will be null).
 * Decide how the application will allocate memory segments: through a segment allocator or a memory session. Make sure the memory allocation technique is consistent throughout the codebase of an application.
 
 ## Code listing
