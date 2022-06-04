@@ -4,6 +4,7 @@ title:  'Introduction to OpenJDK Project Panama. Part 1: "Hello World" applicati
 date:   2022-05-31
 categories: openjdk panama
 tags: ["openjdk", "panama"]
+image: "images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg"
 ---
 
 ## Introduction
