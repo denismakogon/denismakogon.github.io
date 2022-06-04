@@ -6,16 +6,16 @@ categories: openjdk panama
 tags: ["openjdk", "panama"]
 ---
 
-![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
-Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
-on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
-
 ## Introduction
 
 With JDK 19 being released in the coming weeks, it's time to talk about Project Panama, and more specifically, 
 the new Foreign Function & Memory API that eases interoperability between Java and native code.
 
 This article introduces the Foreign Function & Memory API using a simple Java-based "Hello World" application invoking some C native code.
+
+![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
+Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
+on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 
 ### Prerequisites
 
