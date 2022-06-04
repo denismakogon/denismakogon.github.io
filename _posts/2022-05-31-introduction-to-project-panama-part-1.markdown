@@ -86,7 +86,7 @@ int     printf(const char * __restrict, ...)
 
 To write a Java-based "Hello World" application that uses native printf functions, we need to:
 
-### 1. Find the address of the native function.
+### 1. Find the address of the native function
 
 First, we need to search for the native memory address of the [_printf_](https://www.cplusplus.com/reference/cstdio/printf/) function:
 ```java
@@ -103,7 +103,7 @@ Optional<MemorySegment> printfMemorySegment = symbolLookup.lookup("printf");
 
 Technically, a lookup may fail, so properly handling such failure will be covered in an upcoming article.
 
-### 2. Build a descriptor of a function you are calling.
+### 2. Build a descriptor of the function you are calling
 
 Once we know where _C printf_ resides, we need to define the _printf_ descriptor that consists of a result type and accepted parameters.
 It's worth mentioning that native functions like _printf_ called as variadic functions.
@@ -146,7 +146,7 @@ OfAddress ADDRESS = new OfAddress(ByteOrder.nativeOrder())
 ```
 is a value layout in which the corresponding C type is a pointer to a variable, a carrier is **MemoryAddress.class**.
 
-### 3. Build the method handle from the function's native memory address.
+### 3. Build the method handle from the function's native memory address
 
 Using the C _printf_ native address and its function descriptor, we can now create a method handle for C _printf_:
 ```java
@@ -165,7 +165,7 @@ Now that the necessary concepts have been explained, we can extend both definiti
 * An _upcall_ is an invocation of some code written in Java through a **MethodHandle** converted into a native memory segment that could then be passed to native functions as a function pointer.
 
 
-### 4. Allocate native memory.
+### 4. Allocate native memory
 
 We need somehow to bind Java objects to native memory segments to make sure C _printf_ can access them.
 
