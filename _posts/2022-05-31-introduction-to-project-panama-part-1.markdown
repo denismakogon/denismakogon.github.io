@@ -239,5 +239,5 @@ Several points need to be tackled when invoking native code from Java using the 
 
 ## Code listing
 
-You may find sources for this chapter here [github.com/denismakogon/openjdk-project-samples](https://github.com/denismakogon/openjdk-project-samples/blob/master/Panama.md#openjdk-panama-part-1).
-<script src="https://emgithub.com/embed.js?target=https%3A%2F%2Fgithub.com%2Fdenismakogon%2Fopenjdk-project-samples%2Fblob%2Fmaster%2Fsrc%2Fmain%2Fjava%2Fcom%2Fopenjdk%2Fsamples%2Fpanama%2Fpart_1%2FPrintfSimplified.java&style=github&showBorder=off&showLineNumbers=off&showFileMeta=on&showCopy=on"></script>
+You may find sources for this chapter [here](https://github.com/denismakogon/openjdk-project-samples/blob/master/Panama.md#openjdk-panama-part-1).
+<script src="https://emgithub.com/embed.js?target=https%3A%2F%2Fgithub.com%2Fdenismakogon%2Fopenjdk-project-samples%2Fblob%2Fmaster%2Fsrc%2Fmain%2Fjava%2Fcom%2Fjava_devrel%2Fsamples%2Fpanama%2Fpart_1%2FPrintfSimplified.java&style=github&showBorder=off&showLineNumbers=off&showFileMeta=on&showCopy=on"></script>
