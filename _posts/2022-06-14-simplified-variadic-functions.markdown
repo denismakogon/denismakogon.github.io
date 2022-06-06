@@ -155,41 +155,33 @@ System.out.println(toMethodType(descriptorWithNamedArg));
 
 ## Implementing C variadic functions using Foreign Function and Memory API
 
-The Foreign Function and Memory API offer a method for the explicit variadic arguments definition:
-```java
-FunctionDescriptor::asVariadic
-```
-Alongside that, I will offer you another implementation, the opposite of the explicit definition (implicit or dynamic).
-
-### Explicit variadic argument types defined in advance
-
-It's necessary to revisit the C _printf_ descriptor definition, again:
-```java
-FunctionDescriptor function = FunctionDescriptor.of(
-        JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-);
-```
-as mentioned before, such declaration only covers a return value and named arg type.
-
-According to the **FunctionDescriptor** [JavaDoc](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html#asVariadic(java.lang.foreign.MemoryLayout...)),
-it is possible to explicitly define the exact variadic argument types within a function descriptor in advance:
+A new API offers a method for the explicit variadic arguments definition:
 ```java
 public FunctionDescriptor asVariadic(MemoryLayout... variadicLayouts)
 ```
-it creates a specialized variadic function descriptor, by appending given variadic argument layouts to the function descriptor.
-
-Let's say we want C _printf_ to accept _char * p_ and _int_ as variadic arguments:
+Any arguments provided to **FunctionDescriptor::asVariadic** will also become a part of a method type:
 ```java
-FunctionDescriptor function = FunctionDescriptor.of(
-        JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-        );
-FunctionDescriptor variadicFunction = function.asVariadic(ADDRESS, JAVA_INT);
+var descriptorWithNamedAndVariadicArg = descriptorWithNamedArg
+        .asVariadic(ADDRESS, JAVA_INT);
+System.out.println(toMethodType(descriptorWithNamedAndVariadicArg));
+```
+```shell
+(Addressable,Addressable,int)int
 ```
 
-Compared to C _printf_ definition, the Java-based function descriptor holds more details than C _printf_ version.
-It says that a function that corresponds to a given descriptor returns _int_ value, accepts _char *_ as named arg
-as well as **MANDATORY** variadic arguments of a specific length (two, for example) of types _char * p_ followed by _int_.
-A call to a function of such description will have the following look:
+Let's say we want to implement the following C _printf_downcall:
+```cpp
+printf("My name is %s, age %d\n",  "Denis", 31)
+```
+
+The C _printf_ must accept _char * p_ and _int_ as variadic arguments:
+```java
+FunctionDescriptor descriptorWithNamedAndVariadicArg = FunctionDescriptor.of(
+        JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
+).asVariadic(ADDRESS.withBitAlignment(64), JAVA_INT.withBitAlignment(32));
+```
+
+Compared to the C _printf_ definition, the `descriptorWithNamedAndVariadicArg` descriptor holds more details regarding variadic arguments (types, order, and quantity). A call to a function defined by such description will have the following look:
 ```java
     var namedArg = memorySession.allocateUtf8String("My name is %s, age %d\n");
     var nameVararg = memorySession.allocateUtf8String("Denis");
@@ -198,20 +190,22 @@ A call to a function of such description will have the following look:
     var ret = (int) printfHandle.invoke(namedArg, nameVararg, ageVararg);
 ```
 
-What we know so far is that the JVM will check if it can convert the **MethodHandle::invoke** method type a method type derived from the `variadicFunction` descriptor:
+What we know so far is that the JVM will check if it can safely convert the invocation method type to a method type derived from the `function` descriptor:
 ```java
-//      method type from the descriptor              method type from MethodHandle::invoke
-( MethodType(Addressable, Addressable, int)int ) MethodHandle(MemorySegment,MemorySegment, int)int
+System.out.println(toMethodType(descriptorWithNamedAndVariadicArg));
 ```
-Now it's clear that variadic argument types are a part of a method type which makes them mandatory parameters for a method handle invocation.
-The beauty of variadic arguments in terms of software development is they could or may not be present at the invocation of a function.
+```shell
+(Addressable,Addressable,int)int
+```
 
-So, the assumption was that the following code should've worked:
+The attractiveness of variadic arguments is based on their variadic nature. There is no need to define another function with named arguments to call the  C _printf_ (or any other variadic function) with them as variadic. However, in Java, a call to the variadic function makes developers prepare in advance - it is necessary to create a descriptor for each possible variadic argument combination, as well as create a method handle from a newly created descriptor.
+
+So, the assumption that the following code should've worked is false:
 ```java
 (int) printfHandle.invoke(namedArg, nameVararg); // produces a method type (MemorySegment,MemorySegment,Void)int
 (int) printfHandle.invoke(namedArg); // produces a method type (MemorySegment,Void,Void)int
 ```
-Unfortunately, these both calls will fail with the corresponding exception -- **java.lang.invoke.WrongMethodTypeException**:
+Each call will fail with the corresponding exception -- **java.lang.invoke.WrongMethodTypeException**:
 ```java
 Exception in thread "main" java.lang.RuntimeException: java.lang.invoke.WrongMethodTypeException: 
     cannot convert MethodHandle(Addressable,Addressable,int)int to (MemorySegment,MemorySegment,Void)int
@@ -223,38 +217,18 @@ Exception in thread "main" java.lang.RuntimeException: java.lang.invoke.WrongMet
 ```
 
 These invocations will produce exceptions because a method type implicitly created from a set of variadic arguments
-will not match the expected type derived from the function descriptor used to create a method handle.
+will not match the expected method type derived from the function descriptor used to create a method handle.
 
-Here's where lies the biggest issue: it is hard to keep a combination of variadic arguments compliant with a function descriptor.
-This is the illustration of potential problem:
+So, the biggest problem for developers would be to keep a combination of variadic arguments compliant with a function descriptor. Every new named and variadic arguments combination will need a new function descriptor and eventually a new method handle based on it.
+
+A solution based on a static function variadic descriptor definition will work. However, the downside is the absence of the variadic arguments flexibility, similar to Java varargs. So, it's either a choice between flexibility or simplicity. By sacrificing the flexibility we would have to turn variadic args into mostly named ones, like in the case of _println_ and _printf_:
 ```java
-    private static final FunctionDescriptor printfDescriptor =
+int println(String str) throws Throwable {
+    FunctionDescriptor printfDescriptor =
             FunctionDescriptor.of(JAVA_INT, ADDRESS);
-    private static final FunctionDescriptor variadicPrintfDescriptor = printfDescriptor.asVariadic(ADDRESS, JAVA_INT);;
+    MethodHandle printfHandle = linker.downcallHandle(addr, printfDescriptor);
 
-    private static int printf(String formatter, Object...varargs) {
-        AtomicInteger res = new AtomicInteger(-1);
-        symbolLookup.lookup("printf").ifPresent(addr -> {
-            MethodHandle printfHandle = linker.downcallHandle(addr, variadicPrintfDescriptor);
-            try {
-                var cString = SegmentAllocator.implicitAllocator().allocateUtf8String(formatter);
-                var args = new ArrayList<>(varargs.length + 1);
-                Collections.addAll(args, List.of(cString));
-                Collections.addAll(args, varargs);
-                res.set(
-                    (int) printfHandle.asSpreader(Object[].class, args.size()).invoke(args)
-                );
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
-        });
-        return res.get();
-    }
+    return (int) printfHandle.invoke(SegmentAllocator.implicitAllocator().allocateUtf8String(str + "\n"));
+}
 ```
-
-The ideal scenario is when it's possible to map Java varags to C variadic.
-But what we see here is that a descriptor is defined in advance of a call, a descriptor is not aware of what the actual set of types Java varargs will hold.
-Therefore, it's strictly required to impose Java varargs validation to fail-fast before performing the actual invocation.
-A solution based on **FunctionDescriptor::asVariadic** indeed works and may serve its purpose, but the downside is the absence of flexibility, i.e., to Java varargs, say hello to named args in Java methods.
-
-Good news! There's one more solution, that is meant to be a combination of flexibility and dynamic typing.
+The opposite situation is when the sacrifice of simplicity leads to the complexity isn't that bad after all. That's what the second part of this article will cover.
