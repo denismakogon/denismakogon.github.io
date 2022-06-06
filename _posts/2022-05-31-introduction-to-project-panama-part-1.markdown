@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  'Introduction to OpenJDK Project Panama. Part 1: "Hello World" application".'
+title:  'Introduction to Project Panama. Part 1: "Hello World" application".'
 date:   2022-05-31
 categories: openjdk panama
 tags: ["openjdk", "panama"]
