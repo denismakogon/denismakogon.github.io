@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  'Introduction to OpenJDK Project Panama. Part 2: Implementing variadic functions in a simple way.'
+title:  'Introduction to Project Panama. Part 2.2: Advanced variadic functions.'
 date:   2022-06-21
 categories: openjdk panama
 tags: ["openjdk", "panama"]
@@ -12,83 +12,86 @@ excerpt: 'This article explores problems of variadic functions and possible impl
 Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 
-[Introduction to OpenJDK Project Panama. Part 1.]({{ '/openjdk/panama/2022/05/31/introduction-to-project-panama-part-1.html' | relative_url }})
 ## Intro
 
-This article explores a problem of variadic functions in Java and possible straightforward implementation of variadic functions using Foreign Function and Memory API.
-
-## Implementing dynamic variadic arguments in Java
-
-
-The biggest issue with varargs that it's not possible predict a set of vararg types in advance that will be used at invocation stage, therefore,
-it's not possible to predict a generic version of a **FunctionDescriptor** that will _just work_ for every possible varargs configuration.
-
-The solution would a mechanism that will dynamically create a new function descriptor every invocation based on the original descriptor.
-
-TODO: talk about method types
-
-### **FunctionDescriptor** is a key part of **MethodHandle**
-
-A function descriptor is a key dependency of a native function method handle:
+[Part 2.1]() covered simplified variadic function implementation using Foreign Function & Memory API.
+The idea was to define a function descriptor with variadic argument layouts in advance, before the call:
 ```java
-MethodHandle printfMethodHandle = symbolLookup.lookup("printf").map(
-        addr -> linker.downcallHandle(addr, printfDescriptor)
-    ).orElse(null);
+FunctionDescriptor descriptorWithNamedAndVariadicArg = FunctionDescriptor.of(
+        JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
+).asVariadic(
+        ADDRESS.withBitAlignment(64), JAVA_INT.withBitAlignment(32)
+);
 ```
 
-which means for every new function descriptor there has to be a new method handle.
-
-### Advanced **MethodHandle** usage
-
-To solve the varargs problem it is necessary to implement a method handle configured using the original function descriptor.
-At the same time it must have a custom version of **MethodHandle::invoke** method that can dynamically 
-build a new function descriptor from the original descriptor and given varargs at the execution stage.
-
-A solution described above require to implement reflective access to a virtual member of a class. 
-If you are familiar with the reflective access, then you may skip this part, if not - let's proceed.
-
-#### Reflective access to members of a class
-
-Imagine a hello-world application - _main_ and _helloWorld_ static methods, _main_ invokes _helloWorld_. 
-Let's call _helloWorld_ through its method handle:
+Main downside of a such solution is a need to define a function descriptor and a method handle in advance for every possible combination of the variadic arguments.
+Eventually, the code base of an application that utilises native calls will potentially be flooded with a method overloading:
 ```java
-package com.openjdk.samples.panama.stdlib;
+private static int printf(String formatter, MemorySession memorySession) throws Throwable {
+    var localDescriptor = FunctionDescriptor.of(JAVA_INT, ADDRESS);
+    var printfMethodHandle = symbolLookup.lookup("printf").map(
+        addr -> linker.downcallHandle(addr, localDescriptor)
+    ).orElse(null);
+    return (int) printfMethodHandle.invoke(memorySession.allocateUtf8String(formatter));
+}
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-
-class MethodTypeExample {
-
-    private static final MethodHandle helloWorld_mh;
-
-    private static void helloWorld() {
-        System.out.println("hello-world");
-    }
-
-    static {
-        try {
-            helloWorld_mh = MethodHandles.lookup().findStatic(
-                    MethodTypeExample.class, "helloWorld",
-                    MethodType.methodType(void.class));
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static void main(String[] args) throws Throwable {
-        helloWorld_mh.invokeExact();
-    }
-
+private static int printf(String formatter, String arg1, String arg2, MemorySession memorySession) throws Throwable {
+    var localDescriptor = FunctionDescriptor.of(JAVA_INT, ADDRESS).asVariadic(ADDRESS, ADDRESS);
+    var printfMethodHandle = symbolLookup.lookup("printf").map(
+        addr -> linker.downcallHandle(addr, localDescriptor)
+    ).orElse(null);
+    return (int) printfMethodHandle.invoke(
+        memorySession.allocateUtf8String(formatter),
+        memorySession.allocateUtf8String(arg1),
+        memorySession.allocateUtf8String(arg2),
+    );
 }
 ```
 
-The purpose of this code above is to find a method handle of a static member _helloWorld_ within a **MethodTypeExample.class**
-which method type matches to a _void function with no argument_. If a lookup was successful, a method _helloWorld_ can
-be called through its method handle.
+As you see, it's a choice between flexibility and simplicity. Part 2.1 described a simple solution, so the Part 2.2 will do explore the advanced solution.
 
+## Implementing dynamic variadic arguments
 
-### Creating reflected version on `invoke` method
+Looking at those overloaded Java methods above, first thing that catches the eye is a need to distinct named and variadic arguments preserving the original signature of a native method.
+In the case of C _printf_, Java method implementing a downcall to the native function suppose to have the following signature:
+```java
+// compliant with
+// int printf(const char * __restricted, ...);
+int printf(Addressable x0, Object... x1);
+```
+
+Part 2.1 outlines very important dependency between the variadic arguments, descriptors and method handles.
+So the dynamic variadic arguments implementation algorithm based on four aspects:
+* Named argument layouts doesn't change over the time:
+```java
+// static base descriptor, will not change unless C _printf_ will
+var base = FunctionDescriptor.of(JAVA_INT, ADDRESS);
+
+// a temporary extended base descriptor
+// needed for the particular combination of two C pointer variadic arguments
+var baseWithVariadic = base.asVariadic(ADDRESS, ADDRESS);
+```
+* An invocation method type can be static:
+```java
+(Addressable, Object[])int
+```
+* Variadic argument layouts can be defined based on the content of varargs (`Object... x1`).
+* A method handle will change because a function descriptor will evolve all the time as well.
+
+The general idea is to build a function descriptor-modifying proxy with the corresponding method type (in the case of for C _printf_ - `(Addressable, Object[])int`) 
+between a native function consumer and the underlying **MethodHandle::invoke**.
+
+### Setting up the method handle of a specific type
+
+As mentioned before, a method handle relies on a method type derived from the function descriptor which means that any variadic argument layout added to the descriptor will impact the method type:
+```java
+FunctionDescriptor.of(JAVA_INT, ADDRESS) --> (Addressable)int
+FunctionDescriptor.of(JAVA_INT, ADDRESS).asVariadic(JAVA_INT, ADDRESS) --> (Addressable, int, Addressable)int
+```
+
+A proxy must create a method handle using a method type created from the function descriptor consisting of a return value layout and named arguments.
+
+### 
 
 We know that **MethodHandle::invoke** accepts varargs, but there are no named args, even though it's not an issue,
 but it's way better to have a specific version of `invoke` that matches a signature of a native function,
@@ -204,7 +207,6 @@ the version of the original function description based on the given varargs.
 
 Note: **VarargsInvoker** implementation available in Appendix 2.
 
-
 ## Using **VarargsInvoker**
 
 Finally, we are at THAT moment when we can finally use the **VarargsInvoker**!
@@ -294,62 +296,6 @@ That's what I'm going to talk about in the next Part 3!
 ## Code listings
 
 ### Appendix 1: Printf variadic
-
-```java
-package com.openjdk.samples.panama.stdlib;
-
-import java.lang.foreign.*;
-import java.lang.invoke.MethodHandle;
-import java.util.List;
-
-import static java.lang.foreign.ValueLayout.ADDRESS;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
-
-
-public class PrintfVariadic {
-    private static final Linker linker = Linker.nativeLinker();
-    private static final SymbolLookup linkerLookup = linker.defaultLookup();
-    private static final SymbolLookup systemLookup = SymbolLookup.loaderLookup();
-    private static final SymbolLookup symbolLookup = name ->
-            systemLookup.lookup(name).or(() -> linkerLookup.lookup(name));
-    private static final FunctionDescriptor printfDescriptor = FunctionDescriptor.of(
-            JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-    );
-
-    private static void printf(MemorySegment namedArg, Object... varargs) {
-        symbolLookup.lookup("printf").ifPresent(addr -> {
-            MethodHandle printfHandle = VarargsInvoker.make(linker, addr, printfDescriptor);
-            try {
-                System.out.println(
-                        (int) printfHandle.invoke(namedArg, varargs)
-                );
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
-
-    public static void main(String[] args) throws Throwable {
-        var parts = List.of("hello", "world", "from the", "other side");
-        var stringFormat = "%s %s, %s %s!\n";
-        var stringWithDecimals = "Hello, my name is %s, I'm %d years old.\n";
-        try (var memorySession = MemorySession.openConfined()) {
-            var varargs = parts.stream().map(
-                    p -> memorySession.allocateUtf8String(p).address()
-            ).toList().toArray();
-
-            printf(memorySession.allocateUtf8String(stringFormat), varargs);
-
-            var newParts = new Object[]{
-                    memorySession.allocateUtf8String("Denis").address(),
-                    (long) 31
-            };
-            printf(memorySession.allocateUtf8String(stringWithDecimals), newParts);
-        }
-    }
-
-}
-```
 
 ### Appendix 2: VarargsInvoker
 
