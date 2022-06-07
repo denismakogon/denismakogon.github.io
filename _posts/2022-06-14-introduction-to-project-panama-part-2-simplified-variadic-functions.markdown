@@ -82,22 +82,22 @@ According to C _printf_ definition, it has both named (positional) args (`const 
 public final native @PolymorphicSignature Object invoke(Object... args) throws Throwable;
 ```
 
-So, no matter what kind of combination of named and variadic arguments is provided (to **MethodHandle::invoke**) to call a native function, they must be supplied in two ways -- as array of type **Object[]**:
+So, no matter what kind of combination of named and variadic arguments is provided (to **MethodHandle::invoke**) to call a native function, they must be supplied in two forms -- as array of type **Object[]**:
 ```java
 var allArgs = new Object[] {};
 // add a few args here
-methodHandle.asSpreader(Object[].class, allArgs.length).invoke(allArgs);
+methodHandle.asSpreader(Object[].class, allArgs.length).invoke(allArgs); // explicit alternative to _MethodHandle::invokeWithArgument_
 ```
 or passed as varargs where named args followed by the variadic preserving their order to comply with the **FunctionDescriptor** definition:
 ```java
 methodHandle.invoke(one, two, three);
 ```
 
-It is highly important to say that the **FunctionDescriptor** isn't just a representation of the C method signature (a return value, names arguments order, and variadic arguments) but also declares the Java method type of a native function. Therefore, to perform a native call, the Java runtime must know what (a method handle) and how to call a native code (based on the method type).
+It is highly important to say that the **FunctionDescriptor** isn't just a representation of the C method signature (a return value, names arguments order, and variadic arguments) but also declares the Java method type of native function. Therefore, to perform a native call, the Java runtime must know what (a method handle) and how to call a native code (based on the method type).
 
 #### Native function descriptor and a method type
 
-The **FunctionDescriptor** is the key to a process of the native function invoke method type validation (or safe type converting). The **FunctionDescriptor** is the only entity the JVM relies on when attempting to match the **MethodHandle::invoke** method type and the descriptor method type as a reference value.
+The **FunctionDescriptor** is the key to a process of the native function invoke method type validation (or safe type converting) and the only entity the JVM relies on when attempting to match the **MethodHandle::invoke** method type and the descriptor method type as a reference value.
 
 At the runtime, when the **MethodHandle::invoke** is called, the JVM attempts to perform safe type converting between
 the method type (see [MethodType](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/invoke/MethodType.html)) derived from a function descriptor
@@ -123,28 +123,14 @@ At invocation, the JVM will create a method type from arguments (`MethodHandle(M
 
 Note: Such type converting procedure would be successful because the **MemorySegment** class implements the [Addressable interface](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Addressable.html).
 
-The key takeaway is that the JVM will use the **FunctionDescriptor** return value and argument layouts to create a method type:
-```java
-// com.java_devrel.samples.panama.part_2.FunctionDescriptorToMethodType
-private static MethodType toMethodType(FunctionDescriptor d) {
-    var methodType = MethodType.methodType(
-            d.returnLayout().isPresent() ?
-                carrier(d.returnLayout().get(), true) :
-                void.class
-    );
-    for(var layout: d.argumentLayouts()) {
-        var argType = carrier(layout, false);
-        methodType = methodType.appendParameterTypes(argType);
-    }
-    return methodType;
-}
-```
+The key takeaway is that the JVM will use the **FunctionDescriptor** return value and argument layouts to create a method type.
 So the argument types, order, and quantity validation will be enforced by the Java runtime at the call of a native function because with a return value type and the arguments form a method type:
 ```java
 var emptyDescriptor = FunctionDescriptor.of(JAVA_INT);
-System.out.println(toMethodType(emptyDescriptor));
+System.out.println(Linker.downcallType(emptyDescriptor));
+
 var descriptorWithNamedArg = emptyDescriptor.appendArgumentLayouts(ADDRESS);
-System.out.println(toMethodType(descriptorWithNamedArg));
+System.out.println(Linker.downcallType(descriptorWithNamedArg));
 ```
 ```shell
 ()int
@@ -224,8 +210,7 @@ Unfortunately, declaring in advance doesn't seem to be a complete solution.
 ## Choice between flexibility and simplicity
 
 The arg types declaring in-advance solution will work in many cases, not all variadic functions accept a variety of types like _printf_.
-However, the downside is the absence of flexibility. So, it's either a choice between flexibility or simplicity, pick one.
-By sacrificing the flexibility we would have to turn variadic args into mostly named args, like in the case of _println_ and _printf_:
+However, the downside is the absence of flexibility. By sacrificing the flexibility we would have to turn variadic args into mostly named args, like in the case of _println_ and _printf_:
 ```java
 int println(String str, String name int age) throws Throwable {
     FunctionDescriptor printfDescriptor =
@@ -237,8 +222,9 @@ int println(String str, String name int age) throws Throwable {
     return (int) printfHandle.invoke(formatter, nameSegment, int);
 }
 ```
-The opposite situation is when the sacrifice of simplicity leads to complexity which isn't that bad after all.
-The second part of this article will cover advanced and more complex solutions comparing to the definition in advance.
+
+So, it's either a choice between simplicity (creating a new function descriptor and a downcall handle for each variation of variadic argument types) or flexibility (complex, but fully automated solution).
+In part 2, I will show how to implement the advanced solution.
 
 ## Code listing
 
