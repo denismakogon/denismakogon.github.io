@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  'Introduction to Project Panama. Part 2.1: Simply implementing variadic functions.'
+title:  'Introduction to Project Panama. Part 2: Simply implementing variadic functions.'
 date:   2022-06-6
 categories: openjdk panama
 tags: ["openjdk", "panama"]
@@ -17,7 +17,7 @@ on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_mediu
 
 This article explores Java native variadic functions and implementation using Foreign Function and Memory API (Project Panama).
 
-This article is divided into two pieces: a simplified solution and an advanced solution.
+There are two solutions to the problem of the C variadic functions in Java. This article will focus on a simplified implementation. The next one will cover an advanced solution.
 
 ## C Variadic Functions in Java
 
@@ -55,7 +55,7 @@ as in the latter in the parameter list and must follow at least one named parame
 int     printf(const char * __restrict, ...);
 ```
 
-At the moment of a call to the variadic function, it accepts variadic arguments. According to its definition, a length of variadic arguments could equal to zero but not greater than 127 entities per function call:
+At the moment of a call to the variadic function, it accepts no more than 127 variadic arguments per function call:
 ```cpp
 printf("hello world");
 printf(" I'm a=%s, I'm b=%s", a, b);
@@ -79,7 +79,7 @@ FunctionDescriptor function = FunctionDescriptor.of(
 ```
 The C _printf_ is a variadic function, but there is no sign of variadic arguments in the descriptor.
 
-According to C _printf_ definition, it has both named (positional) args (`const char * __restricted`) and variadic arguments (`...`), but the Java entry point to the C _printf_ (**MethodHandle::invoke**) accepts varargs only (there is no distinction between named args and varargs):
+According to C _printf_ definition, it has both named (positional) args (`const char * __restricted`) and variadic arguments (`...`) while the Java entry point to the C _printf_ (**MethodHandle::invoke**) accepts varargs only (there is no distinction between named args and varargs):
 ```java
 public final native @PolymorphicSignature Object invoke(Object... args) throws Throwable;
 ```
@@ -108,7 +108,7 @@ At runtime, MethodHanlde::Invoke is called, and the JVM attempts safe type conve
 //                <ADDRESS>      <JAVA_INT>
 MethodHandle  (  Addressable  )     int
 ```
-and a method type created from the arguments passed to the **MethodHandle::invoke** (both named and variadic). The JVM will consider the method type mismatch as an exceptional situation.
+and a method type created from the arguments passed to the **MethodHandle::invoke** (both named and variadic). The JVM will recognize type mismatch as an exceptional situation.
 
 In the case of the C _printf_, the JVM will check if it can safely convert a combination of named and variadic arguments submitted to the **MethodHandle::invoke** to a method type derived from the Java implementation of the C _printf_ function descriptor.
 
@@ -186,9 +186,9 @@ System.out.println(toMethodType(descriptorWithNamedAndVariadicArg));
 (Addressable,Addressable,int)int
 ```
 
-The attractiveness of variadic arguments is based on their variadic nature. There is no need to define another function with named arguments to call the  C _printf_ (or any other variadic function) with them as variadic.
-However, in Java, a call to the variadic function makes developers prepare in advance -- it is necessary to create a descriptor for each possible variadic argument combination, as well as create a method handle from a newly created descriptor.
-So, the following code will fail:
+The attractiveness of variadic arguments is based on their variadic nature.
+However, a call to the variadic function makes Java developers prepare in advance -- it is necessary to create a descriptor for each possible variadic argument 
+combination and a method handle from a newly created descriptor. So, the following code will fail:
 ```java
 (int) printfHandle.invoke(namedArg, nameVararg); // method type: (MemorySegment,MemorySegment,Void)int
 (int) printfHandle.invoke(namedArg); // method type: (MemorySegment,Void,Void)int
@@ -204,16 +204,16 @@ Exception in thread "main" java.lang.RuntimeException: java.lang.invoke.WrongMet
     cannot convert MethodHandle(Addressable,Addressable,int)int to (MemorySegment,Void,Void)int
 ```
 
-These invocations will produce exceptions because a method type implicitly created from a set of variadic arguments
-will not match the expected method type derived from the function descriptor used to create the `printfHandle` method handle.  So, the biggest problem for developers would be to keep a combination of variadic arguments compliant with a function descriptor. Every new named and variadic arguments combination will need a new function descriptor and eventually a new method handle based on it.
+These invocations will produce exceptions because of the actual method type and the expected type mismatch. 
+So, the biggest problem for developers would be to keep a combination of variadic arguments compliant with a function descriptor. Every new named and variadic arguments combination will need a new function descriptor and eventually a new method handle based on it.
 
-There is a strong dependency between invocation parameters, function descriptors, and method handles. An invocation must always comply with the function descriptor, otherwise, it will fail.
+There is a strong dependency between invocation parameters, function descriptors, and method handles. An invocation **must** always comply with the function descriptor. If not -- it will lead to the exception.
 Unfortunately, declaring in advance does not ensure that the code will work.
 
-## Flexibility vs Simplicity
+## Flexibility VS Simplicity
 
-The arg types declaring in-advance solution will work in many cases, but not all variadic functions accept a variety of types like _printf_.
-However, the downside is the absence of flexibility. By sacrificing the flexibility we would have to turn variadic args into mostly named args, like in the case of _println_ and _printf_:
+The arg types declaring an in-advance solution will work in many cases. Not all variadic functions are like the C _printf_ that accept variadic arguments of different types.
+However, the downside is the absence of flexibility. By sacrificing the variadic arguments flexibility, they turn into mostly named args, like in the case of _println_ and _printf_:
 ```java
 int println(String str, String name int age) throws Throwable {
     var allocator = SegmentAllocator.implicitAllocator();
@@ -227,7 +227,7 @@ int println(String str, String name int age) throws Throwable {
 }
 ```
 
-So, it's either a choice between simplicity (creating a new function descriptor and a downcall handle for each variation of variadic argument types) or flexibility (complex, but fully automated solution).
+So, it's either a choice between simplicity (creating a new function descriptor and a downcall handle for each variation of variadic argument types) or flexibility (complex but fully automated solution).
 In part 2, I will show how to implement the advanced solution.
 
 ## Code listing
