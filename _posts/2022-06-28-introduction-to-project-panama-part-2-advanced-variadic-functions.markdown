@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  'Introduction to Project Panama. Part 2.2: Advanced variadic functions.'
-date:   2022-06-21
+#date:   2022-06-21
 categories: openjdk panama
 tags: ["openjdk", "panama"]
 image_src_url: 'https://unsplash.com/photos/Wiwqd_8Rds8/download?ixid=MnwxMjA3fDB8MXxzZWFyY2h8OXx8cGFuYW1hfGVufDB8fHx8MTY1NDMyNzMwMg&force=true&w=800'
