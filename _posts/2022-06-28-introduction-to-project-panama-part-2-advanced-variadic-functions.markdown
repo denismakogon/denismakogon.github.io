@@ -54,7 +54,7 @@ but only for that type of native functions where a scope of variadic arguments i
 
 This article will focus on the complex but flexible solution -- dynamic variadic argument layouts.
 
-## Dynamic variadic arguments idea
+## Dynamic variadic arguments
 
 A term "dynamic" implies to an at attempt to guess what kind of value layouts will match objects passed down as varargs to a Java method.
 Such Java method must be compliant with the C signature of the same native function. In the case of C _printf_:
@@ -71,40 +71,153 @@ var base = FunctionDescriptor.of(JAVA_INT, ADDRESS);
 ```
 while the only thing that impact a descriptor is the content of varargs (`Object... x1`).
 
-The general idea is to create a dynamic array-collecting method handle proxy between
+
+The problem is that the JVM has no idea what the exact signature of a C function is, it only relies on the expected method handle type derived from a function descriptor.
+Interesting fact, a descriptor holds more than just a return value and argument layouts, but also can tell how many arguments (both named and variadic) it has and a position of a first variadic argument.
+It also means that the runtime has enough knowledge to which part of a method type corresponds to named or variadic arguments (based on the value of [**FunctionDescriptor::firstVariadicArgumentIndex**](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html#firstVariadicArgumentIndex())):
 ```java
-invoke(Arg1, ..., ArgN, varArg1, ..., varArgN) ----> invoke(Objectp[] {Arg1, ..., ArgN, varArg1, ..., varArgN})
+var desriptor = FunctionDescriptor.of(JAVA_INT, ADDRESS).asVariadic(ADDRESS, int, long);
+var indexOffirstVariadicArgument = desriptor.firstVariadicArgumentIndex(); // 1
+```
+```shell
+     0              1       2    3
+(Addressable, Addressable, int, long)int
+ --------->  |       varargs       |
 ```
 
-which method type correspond to a function descriptor. 
-So, a call ot the variadic function suppose to look like:
+The general idea is to create such method handle proxy which method type correspond to the base part of a function descriptor with the additional **Object[]** vararg holder, but acting as an argument array-collecting method:
 ```java
-MethodHandle::invoke(namedArg1, ..., namedArgN, variadicArg1, ..., variadicArgN);
+methodHandle.invoke(namedArg1, ..., namedArgN, varArg1, ..., varArgN) ---> methodHandle.invoke(Object[] args)
+```
+i.e., it's necessary create a method handle that in a runtime can can collect whatever arguments it invoked with into an array of **Object**'s which method type correspond to a function descriptor with the additional named argument **Object[]**.
+
+### Invoke method handle
+
+Taking into account that a proxy suppose to be a generic solution for **ALL** variadic functions, it must learn from a function descriptor it creates a method handle for.
+So, a proxy depends on how many argument a descriptor hold, their order and the type layouts, and subsequently the corresponding method type.
+These aspects help to create a proxy method handle of a specific method type assuming that the last argument would be an array **Object[]** holding the variadic arguments:
+```java
+
+static {
+    try {
+        INVOKE_MH = MethodHandles.lookup().findVirtual(VarargsInvoker.class, "invoke", 
+            MethodType.methodType(Object.class, SegmentAllocator.class, Object[].class));
+    } catch (ReflectiveOperationException e) {
+        throw new RuntimeException(e);
+    }
+}
+
+static MethodHandle make(Linker linker, MemorySegment symbol, FunctionDescriptor function) {
+    VarargsInvoker invoker = new VarargsInvoker(linker, symbol, function);
+    MethodHandle handle = INVOKE_MH
+                .bindTo(invoker)
+                .asCollector(Object[].class, function.argumentLayouts().size() + 1);
+    MethodType mtype = MethodType.methodType(
+                function.returnLayout().isPresent() ?
+                carrier(function.returnLayout().get(), true) :
+                void.class
+    );
+    for (MemoryLayout layout : function.argumentLayouts()) {
+        mtype = mtype.appendParameterTypes(carrier(layout, false));
+    }
+    mtype = mtype.appendParameterTypes(Object[].class);
+    if (mtype.returnType().equals(MemorySegment.class)) {
+        mtype = mtype.insertParameterTypes(0, SegmentAllocator.class);
+    } else {
+        handle = MethodHandles.insertArguments(handle, 0, THROWING_ALLOCATOR);
+    }
+    return handle.asType(mtype);
+}
 ```
 
-For instance, a call to the C _printf_ suppose to look like:
+To make a proxy method handle versatile for all variadic functions it must be agnostic to a combination of both named and variadic arguments it might be invoked with, that's why it must act as an [argument array-collecting method](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/invoke/MethodHandle.html#asCollector(java.lang.Class,int)) - 
+simpli enclose all parameters into an array of type **Object[]**.
+
+Note: It's definitely possible that a native function return a value type may not be a primitive type (like C _printf_), so to access a return value it's not needed to allocate a memory segment.
+However, if a function returns a struct or an array it's necessary to allocate a memory segment to make this value accessible from the Java runtime, that's why the first argument in invocation prior to **Object[]** could be a **SegmentAllocator**.
+
+The code above creates a method handle for the **VarargsInvoker::invoke** that act as a proxy between a consumer of a native function and the actual invocation.
+It means that previously a method handle used to invoke a function was provided by a **Linker**:
+```shell
+MethodHandle printfHandle = LINKER.downcallHandle(symbol, descriptor); // a method handle of the C printf
+```
+But this time a consumer of a native function receive a method handle to a "proxy" method responsible for the downcall:
 ```java
-VarargsInvoker(address, Function.of(JAVA_INT, ADDRESS)).invoke(formatter, variadicArg1, ..., variadicArgN);
+MethodHandle proxyHandle = VarargsInvoker.make(symbol, descriptor); // a method handle of the VarargsInvoker::invoke
 ```
 
-### Arguments collector
+### Invoke method
 
-So far the problem is that the JVM has no idea what the exact signature of a C function is, it only depends on a function descriptor.
-Interesting fact, a function descriptor holds more than just a return value and argument layouts, but also can tell how many arguments (both named and variadic) it has and a position of a first variadic argument.
+Collecting all invocation parameters into the **Object[]** array eases further processing of parameters making the assumption that an array holds named parameters followed by an **Object[]** array holding variadic ones.
+So, the **VarargsInvoker::invoke** is responsible for a couple of things:
+1. Making sure a number of named parameters match to a number of layouts stored in the base function descriptor. That's the reason why a proxy keeps a copy of the base function descriptor:
+```java
+    int nNamedArgs = function.argumentLayouts().size();
+    assert(args.length == nNamedArgs + 1);
+    // The last argument is the array of vararg collector
+    Object[] unnamedArgs = (Object[]) args[args.length - 1];
 
-The problem is that the **MethodHandle::invoke** have no idea where named args end and variadic start.
+    int argsCount = nNamedArgs + unnamedArgs.length;
+    Class<?>[] argTypes = new Class<?>[argsCount];
+    MemoryLayout[] argLayouts = new MemoryLayout[nNamedArgs + unnamedArgs.length];
+```
+2. Creating a new function descriptor from both named and variadic parameters:
+```java
+    for (pos = 0; pos < nNamedArgs; pos++) {
+        argLayouts[pos] = function.argumentLayouts().get(pos);
+    }
+    assert pos == nNamedArgs;
+    for (Object o: unnamedArgs) {
+        argLayouts[pos] = variadicLayout(normalize(o.getClass()));
+        pos++;
+    }
+    assert pos == argsCount;
+    FunctionDescriptor f = (function.returnLayout().isEmpty()) ?
+        FunctionDescriptor.ofVoid(argLayouts) :
+        FunctionDescriptor.of(function.returnLayout().get(), argLayouts);
+```
+The previous article shown a use of the **FunctionDescriptor::asVariadic** for variadic arguments as a part of the simplified implementation. 
+However, it's not necessary to apply it here because there's no impact a final method type.
 
-Makes an array-collecting method handle, which accepts a given number of trailing positional arguments and collects them into an array argument. 
-The new method handle adapts, as its target, the current method handle. The type of the adapter will be the same as the type of the target, 
-except that a single trailing parameter (usually of type arrayType) is replaced by arrayLength parameters whose type is element type of arrayType.
+3. Invoking a native function with an array-collected parameters:
+```java
+return mh.asSpreader(Object[].class, argsCount).invoke(allArgs);
+```
 
-So far the problem is that the JVM has no idea what the exact signature of a C function is, it only depends on a function descriptor.
-Such dependency form can be expressed in two statements:
+Full code listing can be found [here]().
 
+### C _printf_ variadic
+
+So, the implementation described above allow to implement a full contract of the C variadic functions.
+However, the **MethodHandle** API it uses isn't trivial. At the same time an introduction of a method handle proxy 
+between a consumer of a native function the actual invocation have opened a chance to manipulate by the aspects of a method handle, i.e., 
+change a method type and turn a handle into an array-collecting.
+
+The best way to showcase a power of such implementation is revising the C _printf_ implementation:
+```java
+private static final FunctionDescriptor printfDescriptor = FunctionDescriptor.of(
+    JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
+);
+
+private static void printf(MemorySegment namedArg, Object... varargs) {
+    symbolLookup.lookup("printf").ifPresent(addr -> {
+        MethodHandle printfHandle = VarargsInvoker.make(linker, addr, printfDescriptor);
+        try {
+            System.out.println(
+                    (int) printfHandle.invoke(namedArg, varargs)
+            );
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    });
+}
+```
+
+So, 
 
 ## Summary
 
-In Part 1, I covered a simplified version of C _printf_ that omitted a couple of critical moments,
+Part 1 covered a simplified version of C _printf_ that omitted a couple of critical moments,
 one of them is variadic functions that are a normal practice in a software development daily routine.
 
 It may look quite complex when you see it for the first time,
@@ -141,40 +254,28 @@ import static java.lang.foreign.ValueLayout.*;
 
 
 class VarargsInvoker {
-
-    private final Linker linker;
     private static final MethodHandle INVOKE_MH;
     private final MemorySegment symbol;
     private final FunctionDescriptor function;
 
-    private static final SegmentAllocator THROWING_ALLOCATOR = (size, align) -> {
-        throw new IllegalStateException("Cannot get here");
-    };
-
-    private VarargsInvoker(Linker linker, MemorySegment symbol, FunctionDescriptor function) {
-        this.linker = linker;
+    private VarargsInvoker(MemorySegment symbol, FunctionDescriptor function) {
         this.symbol = symbol;
         this.function = function;
     }
 
     static {
         try {
-            INVOKE_MH = MethodHandles.lookup().findVirtual(VarargsInvoker.class, "invoke", MethodType.methodType(Object.class, SegmentAllocator.class, Object[].class));
+            INVOKE_MH = MethodHandles.lookup().findVirtual(VarargsInvoker.class, "invoke", 
+                        MethodType.methodType(Object.class, SegmentAllocator.class, Object[].class));
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }
     }
 
-    static MethodHandle make(Linker linker, MemorySegment symbol, FunctionDescriptor function) {
-        VarargsInvoker invoker = new VarargsInvoker(linker, symbol, function);
-        MethodHandle handle = INVOKE_MH
-                .bindTo(invoker)
-                .asCollector(Object[].class, function.argumentLayouts().size() + 1);
-        MethodType mtype = MethodType.methodType(
-                function.returnLayout().isPresent() ?
-                        carrier(function.returnLayout().get(), true) :
-                        void.class
-        );
+    static MethodHandle make(MemorySegment symbol, FunctionDescriptor function) {
+        VarargsInvoker invoker = new VarargsInvoker(symbol, function);
+        MethodHandle handle = INVOKE_MH.bindTo(invoker).asCollector(Object[].class, function.argumentLayouts().size() + 1);
+        MethodType mtype = MethodType.methodType(function.returnLayout().isPresent() ? carrier(function.returnLayout().get(), true) : void.class);
         for (MemoryLayout layout : function.argumentLayouts()) {
             mtype = mtype.appendParameterTypes(carrier(layout, false));
         }
@@ -199,14 +300,17 @@ class VarargsInvoker {
     }
 
     private Object invoke(SegmentAllocator allocator, Object[] args) throws Throwable {
+        // one trailing Object[]
         int nNamedArgs = function.argumentLayouts().size();
         assert(args.length == nNamedArgs + 1);
+        // The last argument is the array of vararg collector
         Object[] unnamedArgs = (Object[]) args[args.length - 1];
 
         int argsCount = nNamedArgs + unnamedArgs.length;
+        Class<?>[] argTypes = new Class<?>[argsCount];
         MemoryLayout[] argLayouts = new MemoryLayout[nNamedArgs + unnamedArgs.length];
 
-        int pos;
+        int pos = 0;
         for (pos = 0; pos < nNamedArgs; pos++) {
             argLayouts[pos] = function.argumentLayouts().get(pos);
         }
@@ -221,10 +325,11 @@ class VarargsInvoker {
         FunctionDescriptor f = (function.returnLayout().isEmpty()) ?
                 FunctionDescriptor.ofVoid(argLayouts) :
                 FunctionDescriptor.of(function.returnLayout().get(), argLayouts);
-        MethodHandle mh = linker.downcallHandle(symbol, f);
+        MethodHandle mh = LINKER.downcallHandle(symbol, f);
         if (mh.type().returnType() == MemorySegment.class) {
             mh = mh.bindTo(allocator);
         }
+        // flatten argument list so that it can be passed to an asSpreader MH
         Object[] allArgs = new Object[nNamedArgs + unnamedArgs.length];
         System.arraycopy(args, 0, allArgs, 0, nNamedArgs);
         System.arraycopy(unnamedArgs, 0, allArgs, nNamedArgs, unnamedArgs.length);
