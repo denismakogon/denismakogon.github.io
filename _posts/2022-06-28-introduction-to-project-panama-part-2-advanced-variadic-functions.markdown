@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  'Introduction to Project Panama. Part 2.2: Advanced variadic functions.'
+title:  'Introduction to Project Panama. Part 2: Dynamic variadic functions.'
 #date:   2022-06-21
 categories: openjdk panama
 tags: ["openjdk", "panama"]
@@ -14,8 +14,7 @@ on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_mediu
 
 ## Intro
 
-[Part 2.1]() covered simplified variadic function implementation using Foreign Function & Memory API.
-The idea was to define a function descriptor with variadic argument layouts in advance, before the call:
+[Part 2]() shown how implement the C variadic functions in Java using Foreign Function and Memory API: simply define a function descriptor with variadic argument layouts in advance prior the invocation:
 ```java
 FunctionDescriptor descriptorWithNamedAndVariadicArg = FunctionDescriptor.of(
         JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
@@ -24,257 +23,84 @@ FunctionDescriptor descriptorWithNamedAndVariadicArg = FunctionDescriptor.of(
 );
 ```
 
-Main downside of a such solution is a need to define a function descriptor and a method handle in advance for every possible combination of the variadic arguments.
-Eventually, the code base of an application that utilises native calls will potentially be flooded with a method overloading:
+There's one problem: it's required to define a function descriptor (and a method handle, eventually) in advance for every possible combination of the variadic arguments.
+The code base of an application that uses native calls will potentially.
+
+It may seem like the only flexible enough solution is a method overloading:
 ```java
-private static int printf(String formatter, MemorySession memorySession) throws Throwable {
+public static int printf(String formatter) throws Throwable {
+    var allocator = SegmentAllocator.implicitAllocator();
     var localDescriptor = FunctionDescriptor.of(JAVA_INT, ADDRESS);
     var printfMethodHandle = symbolLookup.lookup("printf").map(
         addr -> linker.downcallHandle(addr, localDescriptor)
     ).orElse(null);
-    return (int) printfMethodHandle.invoke(memorySession.allocateUtf8String(formatter));
+    return (int) printfMethodHandle.invoke(allocator.allocateUtf8String(formatter));
 }
 
-private static int printf(String formatter, String arg1, String arg2, MemorySession memorySession) throws Throwable {
+public static int printf(String formatter, String arg1, String arg2) throws Throwable {
+    var allocator = SegmentAllocator.implicitAllocator();
     var localDescriptor = FunctionDescriptor.of(JAVA_INT, ADDRESS).asVariadic(ADDRESS, ADDRESS);
     var printfMethodHandle = symbolLookup.lookup("printf").map(
         addr -> linker.downcallHandle(addr, localDescriptor)
     ).orElse(null);
     return (int) printfMethodHandle.invoke(
-        memorySession.allocateUtf8String(formatter),
-        memorySession.allocateUtf8String(arg1),
-        memorySession.allocateUtf8String(arg2),
+        allocator.allocateUtf8String(formatter),
+        allocator.allocateUtf8String(arg1),
+        allocator.allocateUtf8String(arg2),
     );
 }
 ```
+but only for that type of native functions where a scope of variadic arguments is limited, i.e., for functions that aren't like the C _printf_.
 
-As you see, it's a choice between flexibility and simplicity. Part 2.1 described a simple solution, so the Part 2.2 will do explore the advanced solution.
+This article will focus on the complex but flexible solution -- dynamic variadic argument layouts.
 
-## Implementing dynamic variadic arguments
+## Dynamic variadic arguments idea
 
-Looking at those overloaded Java methods above, first thing that catches the eye is a need to distinct named and variadic arguments preserving the original signature of a native method.
-In the case of C _printf_, Java method implementing a downcall to the native function suppose to have the following signature:
+A term "dynamic" implies to an at attempt to guess what kind of value layouts will match objects passed down as varargs to a Java method.
+Such Java method must be compliant with the C signature of the same native function. In the case of C _printf_:
 ```java
-// compliant with
 // int printf(const char * __restricted, ...);
 int printf(Addressable x0, Object... x1);
 ```
 
-Part 2.1 outlines very important dependency between the variadic arguments, descriptors and method handles.
-So the dynamic variadic arguments implementation algorithm based on four aspects:
-* Named argument layouts doesn't change over the time:
+An algorithm that implement dynamic variadic arguments is based on the fact that named argument layouts doesn't change over the time (unless a new version of a library introduced API changes).
+So, it's possible to set in stone a part of the function descriptor that is responsible for a return value type and named arg layouts:
 ```java
 // static base descriptor, will not change unless C _printf_ will
 var base = FunctionDescriptor.of(JAVA_INT, ADDRESS);
-
-// a temporary extended base descriptor
-// needed for the particular combination of two C pointer variadic arguments
-var baseWithVariadic = base.asVariadic(ADDRESS, ADDRESS);
 ```
-* An invocation method type can be static:
+while the only thing that impact a descriptor is the content of varargs (`Object... x1`).
+
+The general idea is to create a dynamic array-collecting method handle proxy between
 ```java
-(Addressable, Object[])int
+invoke(Arg1, ..., ArgN, varArg1, ..., varArgN) ----> invoke(Objectp[] {Arg1, ..., ArgN, varArg1, ..., varArgN})
 ```
-* Variadic argument layouts can be defined based on the content of varargs (`Object... x1`).
-* A method handle will change because a function descriptor will evolve all the time as well.
 
-The general idea is to build a function descriptor-modifying proxy with the corresponding method type (in the case of for C _printf_ - `(Addressable, Object[])int`) 
-between a native function consumer and the underlying **MethodHandle::invoke**.
-
-### Setting up the method handle of a specific type
-
-As mentioned before, a method handle relies on a method type derived from the function descriptor which means that any variadic argument layout added to the descriptor will impact the method type:
+which method type correspond to a function descriptor. 
+So, a call ot the variadic function suppose to look like:
 ```java
-FunctionDescriptor.of(JAVA_INT, ADDRESS) --> (Addressable)int
-FunctionDescriptor.of(JAVA_INT, ADDRESS).asVariadic(JAVA_INT, ADDRESS) --> (Addressable, int, Addressable)int
+MethodHandle::invoke(namedArg1, ..., namedArgN, variadicArg1, ..., variadicArgN);
 ```
 
-A proxy must create a method handle using a method type created from the function descriptor consisting of a return value layout and named arguments.
-
-### 
-
-We know that **MethodHandle::invoke** accepts varargs, but there are no named args, even though it's not an issue,
-but it's way better to have a specific version of `invoke` that matches a signature of a native function,
-i.e., makes a clear distinction between named and unnamed arguments.
-
-So, the idea is to dynamically create an `invoke` method that we can set up in runtime with a corresponding function
-descriptor holding all necessary named arguments plus varargs (of type **Object[].class**).
-
-At the same time `invoke` method must be responsible for creating a new function descriptor derived from the original one,
-creating an array of type **Object[].class** containing named args followed by unnamed arguments, performing the actual downcall using **MethodHandle::invoke**.
-
-#### `invoke` reflecting definition based on the original function descriptor
-
-The idea is: in a runtime, create an `invoke` method that will comply with a native function C interface.
-So, the algorithm supposes to look like this:
-
-* through the reflective access to a virtual member of a class, create a method handle for the `VarargsInvoker::invoke`:
+For instance, a call to the C _printf_ suppose to look like:
 ```java
-    static {
-        try {
-            INVOKE_MH = MethodHandles.lookup().findVirtual(
-                VarargsInvoker.class, "invoke",
-                MethodType.methodType(Object.class, SegmentAllocator.class, Object[].class)
-            );
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
+VarargsInvoker(address, Function.of(JAVA_INT, ADDRESS)).invoke(formatter, variadicArg1, ..., variadicArgN);
 ```
 
-* create a method type that corresponds to a function descriptor starting from a carrier class standing behind the value layout:
-```java
-    MethodType mtype = MethodType.methodType(
-        function.returnLayout().isPresent() ? carrier(function.returnLayout().get(), true) : void.class
-    );
-```
-in the context of _printf_, the ternary operator will give us an `int.class` while `mtype` will behold an _int_ type representation as a return argument.
+### Arguments collector
 
-* append all class types based on the named args layouts to a method type:
-```java
-    for (MemoryLayout layout : function.argumentLayouts()) {
-        mtype = mtype.appendParameterTypes(carrier(layout, false));
-    }
-```
+So far the problem is that the JVM has no idea what the exact signature of a C function is, it only depends on a function descriptor.
+Interesting fact, a function descriptor holds more than just a return value and argument layouts, but also can tell how many arguments (both named and variadic) it has and a position of a first variadic argument.
 
-* append varargs placeholder:
-```java
-mtype = mtype.appendParameterTypes(Object[].class);
-```
+The problem is that the **MethodHandle::invoke** have no idea where named args end and variadic start.
 
-* set a native function descriptor-based method type to a method handle:
-```java
-return handle.asType(mtype); 
-```
+Makes an array-collecting method handle, which accepts a given number of trailing positional arguments and collects them into an array argument. 
+The new method handle adapts, as its target, the current method handle. The type of the adapter will be the same as the type of the target, 
+except that a single trailing parameter (usually of type arrayType) is replaced by arrayLength parameters whose type is element type of arrayType.
 
-By this moment we've built an `invoke` method that maps one-to-one to function descriptor, but with the additional **Object[].class** as varargs placeholder type.
-In the context of _printf_, vararg types for `invoke` would have the following look:
-```java
-new Object[] {int.class, MemorySegment.class, Object[].class};
-```
+So far the problem is that the JVM has no idea what the exact signature of a C function is, it only depends on a function descriptor.
+Such dependency form can be expressed in two statements:
 
-Note: complete **VarargsInvoker** implementation available in Appendix 2.
-
-
-#### `invoke` responsibilities
-
-As I mentioned above, `invoke` must be responsible for two things:
-- recreating a function descriptor based on the original function descriptor and the actual varargs;
-- creating an array of type **Object[].class** holding named args followed by varargs.
-
-`invoke` routine looks like this:
-* on the invocation, create a **MemoryLayout** array whose size suppose to correspond to a number of both named args and varargs:
-```java
-    int nNamedArgs = function.argumentLayouts().size();
-    assert(args.length == nNamedArgs + 1);
-    Object[] unnamedArgs = (Object[]) args[args.length - 1];
-    int argsCount = nNamedArgs + unnamedArgs.length;
-    MemoryLayout[] argLayouts = new MemoryLayout[nNamedArgs + unnamedArgs.length];
-```
-* loop through named args and varargs, fill a **MemoryLayout** array with the actual memory layouts of every arg:
-```java
-    int pos;
-    for (pos = 0; pos < nNamedArgs; pos++) {
-        argLayouts[pos] = function.argumentLayouts().get(pos);
-    }
-
-    for (Object o: unnamedArgs) {
-        argLayouts[pos] = variadicLayout(normalize(o.getClass()));
-    }
-```
-* create a new function descriptor and a method handle:
-```java
-    FunctionDescriptor f = (function.returnLayout().isEmpty()) ?
-    FunctionDescriptor.ofVoid(argLayouts) :
-    FunctionDescriptor.of(function.returnLayout().get(), argLayouts);
-    MethodHandle mh = LINKER.downcallHandle(symbol, f);
-```
-
-* create a flat array containing both named args and varargs followed one by another:
-```java
-    Object[] allArgs = new Object[nNamedArgs + unnamedArgs.length];
-    System.arraycopy(args, 0, allArgs, 0, nNamedArgs);
-    System.arraycopy(unnamedArgs, 0, allArgs, nNamedArgs, unnamedArgs.length);
-```
-
-* configure a method handle to accept **Object[]** of a fixed size, then perform an invocation of a native function with an array of args.
-```java
-    return mh.asSpreader(Object[].class, argsCount).invoke(allArgs);
-```
-
-The whole idea is to hijack an invocation to a native method through its method handle in order to build a desired
-the version of the original function description based on the given varargs.
-
-Note: **VarargsInvoker** implementation available in Appendix 2.
-
-## Using **VarargsInvoker**
-
-Finally, we are at THAT moment when we can finally use the **VarargsInvoker**!
-I'll skip a part where we create a linker, symbol lookups, and so on (they remain the same from Part 1),
-but still, there are two topics to cover:
-* memory segments and addresses allocation;
-* invocation;
-
-### Invocation
-
-We still need to look up a native address of a function, but instead of creating a **MethodHandle** using an instance of a **Linker**,
-I will use **VarargsInvoker::make** method:
-```java
-    private static void printf(MemorySegment namedArg, Object... varargs) {
-        symbolLookup.lookup("printf").ifPresent(addr -> {
-            MethodHandle printfHandle = VarargsInvoker.make(addr, printfDescriptor);
-            try {
-                System.out.println(
-                        (int) printfHandle.invoke(namedArg, varargs)
-                );
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
-```
-A few things have changed, of course, you see varargs of a type **MethodAddress**.
-If you'll look at **Varargs::variadicLayout** you'll notice that there are only three types that can be processed further: _JAVA_LONG_, _JAVA_DOUBLE_, and **MemoryAddress**.
-The reason for such "limitation" is that the rest of the Java types like **String**, **Integer**, and so on, require a native memory allocation.
-Therefore, for _printf_, I have a limited scope of types to **MemoryAddress** only as the code operates by **String** variables that require native memory segment allocation.
-
-### Memory segment and address allocations
-
-What I'm trying to showcase, in C, would look like:
-<script style="width: 1px;max-width: 100%;min-width: 100%;overflow: hidden;" src="//onlinegdb.com/embed/js/OQciSeTLn?theme=dark"></script>
-
-So, the _main_ would have the following representation:
-```java
-    public static void main(String[] args) throws Throwable {
-        var parts = List.of("hello", "world", "from the", "other side");
-        var stringFormat = "%s %s, %s %s!\n";
-        var stringWithDecimals = "Hello, my name is %s, I'm %d years old.\n";
-        try (var memorySession = MemorySession.openConfined()) {
-            var varargs = parts.stream().map(
-                p -> memorySession.allocateUtf8String(p).address()
-            ).toList().toArray();
-    
-            printf(memorySession.allocateUtf8String(stringFormat), varargs);
-    
-            var newParts = new Object[]{
-                memorySession.allocateUtf8String("Denis").address(),
-                (long) 31
-            };
-            printf(memorySession.allocateUtf8String(stringWithDecimals), newParts);
-        }
-    }
-
-```
-The code above is pretty clear, it creates Java **String** variables.
-Allocates a native memory for each of them, but for varargs - it grabs addresses to comply with a Java version of the _printf_ function.
-
-The output of a program is:
-```shell
-hello world, from the other side!
-34
-Hello, my name is Denis, I'm 31 years old.
-43
-```
 
 ## Summary
 
