@@ -36,12 +36,6 @@ was to make an introduction to the Foreign Function and Memory API. As a practic
 That code did not implement a key (or important) feature -- C variadic arguments for _printf_ function.
 The absence of variadic arguments made C _printf_ implementation look like _PrintStream::println_ rather than _PrintStream::printf_ in Java standard library.
 
-There is no _println_ in C standard library, so the functionality of _println_, as we got used to, can be replaced with _printf_:
-```cpp
-// the same as 'println("Hello World")' if it existed
-printf("Hello World!\n");
-```
-
 The most significant difference between _PrintStream::println_ and _PrintStream::printf_ is the support of varargs in the last one, i.e., the _PrintStream::println_ is a simplified version of _PrintStream::printf_.
 
 The "Hello World" application in Part 1 For the sake of simplicity part 1 did not implement the variadic contract of C _printf_. 
@@ -151,7 +145,7 @@ The argument layouts provided to **FunctionDescriptor::asVariadic** will also be
 ```java
 var descriptorWithNamedAndVariadicArg = descriptorWithNamedArg
         .asVariadic(ADDRESS, JAVA_INT);
-System.out.println(toMethodType(descriptorWithNamedAndVariadicArg));
+System.out.println(Linker.downcallType(descriptorWithNamedAndVariadicArg));
 ```
 ```shell
 (Addressable,Addressable,int)int
@@ -180,7 +174,7 @@ Compared to the C _printf_ definition, the `descriptorWithNamedAndVariadicArg` d
 
 The JVM will check if it can safely convert the invocation method type to a method type derived from the `function` descriptor:
 ```java
-System.out.println(toMethodType(descriptorWithNamedAndVariadicArg));
+System.out.println(Linker.downcallType(descriptorWithNamedAndVariadicArg));
 ```
 ```shell
 (Addressable,Addressable,int)int
