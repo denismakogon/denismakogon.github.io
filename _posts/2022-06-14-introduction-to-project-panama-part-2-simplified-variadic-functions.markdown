@@ -204,7 +204,9 @@ So, the biggest problem for developers would be to keep a combination of variadi
 There is a strong dependency between invocation parameters, function descriptors, and method handles. An invocation **must** always comply with the function descriptor. If not -- it will lead to the exception.
 Unfortunately, declaring in advance does not ensure that the code will work.
 
-## Flexibility VS Simplicity
+## Concerns
+
+### Impact on the flexibility
 
 The arg types declaring an in-advance solution will work in many cases. Not all variadic functions are like the C _printf_ that accept variadic arguments of different types.
 However, the downside is the absence of flexibility. By sacrificing the variadic arguments flexibility, they turn into mostly named args, like in the case of _println_ and _printf_:
@@ -221,8 +223,45 @@ int println(String str, String name int age) throws Throwable {
 }
 ```
 
-So, it's either a choice between simplicity (creating a new function descriptor and a downcall handle for each variation of variadic argument types) or flexibility (complex but fully automated solution).
-In part 2, I will show how to implement the advanced solution.
+### Impact on the performance
+
+The biggest concern is the performance impact as there are too many moving pieces, i.e., on every call the runtime will create a new instance of a method handle.
+The advantage that the C compiler has is that it can see the argument types that are passed to a particular variadic call, and compile accordingly.
+In the Java case, the **Linker** takes on the role of the compiler, and it has to be told in terms of the layout/function descriptor API which argument types are used.
+
+For performance reasons, a method handle for each variadic argument combination should be stored inside a static final field end then used from there:
+```java
+class PrintfImpls {
+    static final FunctionDescriptor PRINTF_BASE_TYPE = FunctionDescriptor.of(JAVA_INT, ADDRESS);
+    static final Linker LINKER = Linker.nativeLinker();
+    static final Addressable PRINTF_ADDR = LINKER.defaultLookup().lookup("printf").orElseThrow();
+
+    static MethodHandle specializedPrintf(MemoryLayout... varargLayouts) {
+        FunctionDescriptor specialized = PRINTF_BASE_TYPE.asVariadic(varargLayouts);
+        return LINKER.downcallHandle(PRINTF_ADDR, specialized);
+    }
+
+    public static final MethodHandle WithInt = specializedPrintf(JAVA_INT);
+    public static final MethodHandle WithString = specializedPrintf(ADDRESS);
+    public static final MethodHandle WithIntAndString = specializedPrintf(JAVA_INT, ADDRESS);
+}
+```
+The resulting method handles should be stored inside a static final field end and then used from there:
+```java
+PrintfImpls.WithIntAndString.invoke(formatter, 42, stringMemorySegment);
+```
+
+## Conclusions
+
+There is a strong dependency between the declaration of a native function and how it is invoked, so a function must be invoked exactly as it was declared, i.e., there's no flexibility.
+Unfortunately, it impacts the implementation of the variadic function requiring to have a function descriptor defined with the variadic argument layouts before the invocation.
+An approach like this contradicts the nature of the variadic arguments because often the number of variadic arguments, their types, and the order are unpredictable.
+
+So, Java developers would have to deal with the impacted flexibility as well as maintain desired performance level
+by making the runtime responsible for invocations, but not for creating downcall handles before the invocation.
+
+Despite the not very pessimistic tone, there is yet another way to solve the problem of the variadic function by delegating
+the infrastructure code provisioning for native functions to Project Panama code generating tool -- jextract.
 
 ## Code listing
 
