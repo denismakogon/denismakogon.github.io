@@ -24,7 +24,7 @@ There are two solutions to the problem of the C variadic functions in Java. This
 ### Part 1 recap
 
 The purpose of [Part 1]({{ '/openjdk/panama/2022/05/30/introduction-to-project-panama-part-1.html' | relative_url }})
-was to make an introduction to the Foreign Function and Memory API. As a practical task, Part 1 shown you how to implement a downcall to the C _printf_ function using corresponding API classes:
+was to make an introduction to the Foreign Function and Memory API. As a practical task, Part 1 shows you how to implement a downcall to the C _printf_ function using corresponding API classes:
 * **SymbolLookup** -- to lookup a native function memory address.
 * **FunctionDescriptor** -- to declare a Java-based function descriptor containing a return value and argument layouts that correspond to the original signature in C.
 * **Linker** -- to create from a function descriptor and its native function address a (Java) method handle wrapping the native function
@@ -33,12 +33,12 @@ was to make an introduction to the Foreign Function and Memory API. As a practic
 ### Revisiting C _printf_ Java implementation
 
 [Part 1]({{ '/openjdk/panama/2022/05/31/introduction-to-project-panama-part-1.html' | relative_url }}) contains a simplified implementation of a downcall to the C _printf_ function in Java.
-That code did not implement a key (or important) feature -- C variadic arguments for _printf_ function.
+That code did not implement a key (or important) feature -- C variadic arguments for the _printf_ function.
 The absence of variadic arguments made C _printf_ implementation look like _PrintStream::println_ rather than _PrintStream::printf_ in Java standard library.
 
 The most significant difference between _PrintStream::println_ and _PrintStream::printf_ is the support of varargs in the last one, i.e., the _PrintStream::println_ is a simplified version of _PrintStream::printf_.
 
-The "Hello World" application in Part 1 For the sake of simplicity part 1 did not implement the variadic contract of C _printf_. 
+The "Hello World" application in Part 1 For the sake of simplicity part 1 did not implement the variadic contract of C _printf_.
 This article contains technical detail of the process and explains the development of a downcall to the C variadic function using Java Foreign Function and Memory API.
 
 ### Variadic functions, variadic arguments
@@ -89,7 +89,7 @@ or passed as varargs where named args followed by the variadic preserving their 
 methodHandle.invoke(one, two, three);
 ```
 
-The **FunctionDescriptor** isn't just a representation of the C method signature (a return value, names arguments order, and variadic arguments) but also declares the Java method type of native function. 
+The **FunctionDescriptor** isn't just a representation of the C method signature (a return value, names arguments order, and variadic arguments) but also declares the Java method type of native function.
 Therefore, to perform a native call, the Java runtime must know the method handle and how to call the native code based on the method type.
 
 #### Native function descriptor and a method type
@@ -181,7 +181,7 @@ System.out.println(Linker.downcallType(descriptorWithNamedAndVariadicArg));
 ```
 
 The attractiveness of variadic arguments is based on their variadic nature.
-However, a call to the variadic function makes Java developers prepare in advance -- it is necessary to create a descriptor for each possible variadic argument 
+However, a call to the variadic function makes Java developers prepare in advance -- it is necessary to create a descriptor for each possible variadic argument
 combination and a method handle from a newly created descriptor. So, the following code will fail:
 ```java
 (int) printfHandle.invoke(namedArg, nameVararg); // method type: (MemorySegment,MemorySegment,Void)int
@@ -198,7 +198,7 @@ Exception in thread "main" java.lang.RuntimeException: java.lang.invoke.WrongMet
     cannot convert MethodHandle(Addressable,Addressable,int)int to (MemorySegment,Void,Void)int
 ```
 
-These invocations will produce exceptions because of the actual method type and the expected type mismatch. 
+These invocations will produce exceptions because of the actual method type and the expected type mismatch.
 So, the biggest problem for developers would be to keep a combination of variadic arguments compliant with a function descriptor. Every new named and variadic arguments combination will need a new function descriptor and eventually a new method handle based on it.
 
 There is a strong dependency between invocation parameters, function descriptors, and method handles. An invocation **must** always comply with the function descriptor. If not -- it will lead to the exception.
@@ -239,8 +239,8 @@ The resulting method handles should be stored inside a static final field end an
 PrintfImpls.WithIntAndString.invoke(formatter, 42, stringMemorySegment);
 ```
 
-Note: The performance is more about the fact that the JIT compiler (C2) will try to inspect and pull apart a method handle, 
-in order to compile a call through a method handle like a call to any normal Java method.
+Note: The performance is more about the fact that the JIT compiler (C2) will try to inspect and pull apart a method handle,
+in order to compile a call through a method handled like a call to any normal Java method.
 But, it can only do this if the method handle is a constant (as seen by the compiler), i.e., defined as a static final field.
 
 ## Conclusions
