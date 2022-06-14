@@ -213,6 +213,88 @@ so the `jextract` will not create a method handle for it.
 In addition to macros, not all functions, constants and structs can be exported due to lack of data types support, i.e., `long double` is not present in Java. 
 When [Project Valhalla](https://openjdk.java.net/projects/valhalla/) will be available, Panama will benefit from it by improving .
 
+### Handling variadic arguments
+
+[Part 2]() have shown how implement the C variadic functions in Java using Foreign Function and Memory API: simply define a function descriptor with variadic argument layouts in advance prior the invocation:
+```java
+class PrintfImpls {
+    static final FunctionDescriptor PRINTF_BASE_TYPE = FunctionDescriptor.of(JAVA_INT, ADDRESS);
+    static final Linker LINKER = Linker.nativeLinker();
+    static final Addressable PRINTF_ADDR = LINKER.defaultLookup().lookup("printf").orElseThrow();
+    static MethodHandle specializedPrintf(MemoryLayout... varargLayouts) {
+        FunctionDescriptor specialized = PRINTF_BASE_TYPE.asVariadic(varargLayouts);
+        return LINKER.downcallHandle(PRINTF_ADDR, specialized);
+    }
+    public static final MethodHandle WithInt = specializedPrintf(JAVA_INT);
+    public static final MethodHandle WithString = specializedPrintf(ADDRESS);
+    public static final MethodHandle WithIntAndString = specializedPrintf(JAVA_INT, ADDRESS);
+}
+```
+
+The `jextract` offers a different solution, it imposes a proxy method between a native function consumer and the actual downcall.
+The implementation enclosed into **RuntimeHelper** class and available through the following API method:
+```java
+MethodHandle downcallHandleVariadic(String name, FunctionDescriptor fdesc);
+```
+
+So, the proxy (**VarargsInvoker** class) is responsible for two things:
+* Create an array-collecting method handle which method type is a combination of a native function descriptor and **Object[]** array as a placeholder for variadic arguments as the last positional argument.
+* Perform the downcall to a native function with a function descriptor constructed from both positional and variadic arguments.
+
+#### **VarargsInvoker::make**
+
+The **VarargsInvoker::make** method is the one responsible for creating an array-collecting method handle. 
+No matter what parameters combination would be used to invoke a method handle, they all would be gathered into the **Object[]** array.
+However, there is a limitation. A method handle provided by the **VarargsInvoker::make** inherit a method type of native function descriptor method extended with the **Object[]** array.
+So, if a descriptor has the following look:
+```java
+FunctionDescriptor.of(JAVA_INT, ADDRESS)
+```
+then the method type of a method handle would look like:
+```java
+(Addressable, Object[].class)int
+```
+
+#### **VarargsInvoker::invoke**
+
+A method handle that the **VarargsInvoker::make** create points to the **VarargsInvoker::invoke**:
+```java
+Object invoke(SegmentAllocator allocator, Object[] args) throws Throwable
+```
+In the runtime, the **VarargsInvoker::invoke** is responsible invoking a native function. 
+So, to make the invocation successful the **VarargsInvoker::invoke** perform several important operations:
+
+* Unfold the parameters array into a one-dimension array containing the layouts for each parameter:
+```java
+new Object[] {namedArg0, ..., namedArg, new Object[]{varArg1, ..., varArgN} } --> new MemoryLayout[] {namedArg0, ..., varArgN}
+```
+
+* Create a new function descriptor from the array containing parameters memory layouts:
+```java
+    FunctionDescriptor f = (function.returnLayout().isEmpty()) ?
+        FunctionDescriptor.ofVoid(argLayouts) :
+        FunctionDescriptor.of(function.returnLayout().get(), argLayouts);
+```
+
+* Flatten the parameters array into a one-dimension array, similarly to the **MemoryLayout[]** array:
+```java
+new Object[] {namedArg0, ..., namedArg, new Object[]{varArg1, ..., varArgN} } --> new Object[] {namedArg0, ..., varArgN}
+```
+
+* Create a new method handle and invoke it:
+```java
+MethodHandle mh = LINKER.downcallHandle(symbol, f);
+return mh.asSpreader(Object[].class, argsCount).invoke(allArgs);
+```
+
+So, the **VarargsInvoker** simply intrude in a process of invocation to manipulate by the process of a native function invocation.
+Note that, such process isn't required to for non-variadic functions.
+
+The benefit of such wrapper is in the complete flexibility, however, the runtime will have to create 
+a new method handle on every invocation that makes it hard to optimise such code, i.e., the runtime will have to inspect and pull apart a method handle,
+in order to compile a call through a method handled like a call to any normal Java method. As mentioned in a previous article, 
+the best performance can be achieved if a method handle defined as a final static method.
+
 ### Exploring С _printf_ Java components
 
 While generated sources contain a unique representation of a **FunctionDescriptor**, **MemorySegment** and **MethodHandle** for every native function, 
@@ -234,7 +316,7 @@ So, for the C _printf_ `jextract` will create the following components:
     );
 ```
 
-* a native address and a method handle:
+* variadic method handle:
 ```java
     static final MethodHandle printf$MH = 
         RuntimeHelper.downcallHandleVariadic(
@@ -243,7 +325,7 @@ So, for the C _printf_ `jextract` will create the following components:
     );
 ```
 
-* C-like Java signature method (a wrapper around a method handle invocation):
+* Java method compliant with the C _printf_ definition from the C stdio library:
 ```java
     public static int printf ( Addressable x0, Object... x1) {
         var mh$ = printf$MH();
@@ -283,21 +365,6 @@ so Java version of C _printf_ invocation isn't really correspond to a simple "He
 The very first best thing about `jextract` isn't just the amount of code it generates for a library header file,
 but the quality of them that provide the ability to preserve or even improve the user experience working
 with the native C/C++ code but in Java.
-
-### Handling variadic arguments
-
-[Part 2]() shown how implement the C variadic functions in Java using Foreign Function and Memory API: simply define a function descriptor with variadic argument layouts in advance prior the invocation:
-```java
-FunctionDescriptor descriptor = FunctionDescriptor.of(
-        JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-).asVariadic(
-        ADDRESS.withBitAlignment(64), JAVA_INT.withBitAlignment(32)
-);
-```
-
-So, the **RuntimeHelper** imposes a proxy method between a native function consumer and the actual downcall.
-
-
 
 ## Treating generated sources
 
