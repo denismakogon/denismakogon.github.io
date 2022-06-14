@@ -204,32 +204,20 @@ So, the biggest problem for developers would be to keep a combination of variadi
 There is a strong dependency between invocation parameters, function descriptors, and method handles. An invocation **must** always comply with the function descriptor. If not -- it will lead to the exception.
 Unfortunately, declaring in advance does not ensure that the code will work.
 
-## Concerns
+## Flexibility and performance
 
-### Impact on the flexibility
+The arg types declaring an in-advance solution will work in many cases because not all variadic functions are like the C _printf.
+At the same time, native functions like the C _printf_ can handle a great variety of variadic arguments.
+So, the goal is to preserve the same level of flexibility during the invocation to functions like the C _printf_.
 
-The arg types declaring an in-advance solution will work in many cases. Not all variadic functions are like the C _printf_ that accept variadic arguments of different types.
-However, the downside is the absence of flexibility. By sacrificing the variadic arguments flexibility, they turn into mostly named args, like in the case of _println_ and _printf_:
-```java
-int println(String str, String name, int age) throws Throwable {
-    var allocator = SegmentAllocator.implicitAllocator();
-    FunctionDescriptor printfDescriptor =
-            FunctionDescriptor.of(JAVA_INT, ADDRESS).asVariadic(ADDRESS, JAVA_INT);
-    MethodHandle printfHandle = linker.downcallHandle(addr, printfDescriptor);
-    var formatter = allocator.allocateUtf8String(str + "\n");
-    var nameSegment = allocator.allocateUtf8String(name);
+Unfortunately, the solution described in this article lacks the flexibility that variadic arguments offer.
+With the declaring in advance approach, variadic arguments turn into named ones, i.e., become mandatory instead of being optional, like in the case of _println_ and _printf_:
 
-    return (int) printfHandle.invoke(formatter, nameSegment, age);
-}
-```
+Another concern is the performance impact as there are too many invocation-specific components, i.e., the runtime would have to create a new instance of a method handle for every variadic arguments combination.
 
-### Impact on the performance
-
-The biggest concern is the performance impact as there are too many moving pieces, i.e., on every call the runtime will create a new instance of a method handle.
-The advantage that the C compiler has is that it can see the argument types that are passed to a particular variadic call, and compile accordingly.
-In the Java case, the **Linker** takes on the role of the compiler, and it has to be told in terms of the layout/function descriptor API which argument types are used.
-
-For performance reasons, a method handle for each variadic argument combination should be stored inside a static final field end then used from there:
+Think about the **Linker** as the compiler. It must know what kind of method handles it needs to create before the invocation.
+The Sooner it happens (ideally at the JVM startup), the less impact it will cause on the application runtime.
+So, for performance reasons, a method handle for each variadic argument combination should be stored inside a static final field end and then used from there:
 ```java
 class PrintfImpls {
     static final FunctionDescriptor PRINTF_BASE_TYPE = FunctionDescriptor.of(JAVA_INT, ADDRESS);
@@ -250,6 +238,10 @@ The resulting method handles should be stored inside a static final field end an
 ```java
 PrintfImpls.WithIntAndString.invoke(formatter, 42, stringMemorySegment);
 ```
+
+Note: The performance is more about the fact that the JIT compiler (C2) will try to inspect and pull apart a method handle, 
+in order to compile a call through a method handle like a call to any normal Java method.
+But, it can only do this if the method handle is a constant (as seen by the compiler), i.e., defined as a static final field.
 
 ## Conclusions
 
