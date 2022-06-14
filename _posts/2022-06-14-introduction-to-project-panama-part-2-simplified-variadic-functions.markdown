@@ -211,15 +211,15 @@ Unfortunately, declaring in advance does not ensure that the code will work.
 The arg types declaring an in-advance solution will work in many cases. Not all variadic functions are like the C _printf_ that accept variadic arguments of different types.
 However, the downside is the absence of flexibility. By sacrificing the variadic arguments flexibility, they turn into mostly named args, like in the case of _println_ and _printf_:
 ```java
-int println(String str, String name int age) throws Throwable {
+int println(String str, String name, int age) throws Throwable {
     var allocator = SegmentAllocator.implicitAllocator();
     FunctionDescriptor printfDescriptor =
-            FunctionDescriptor.of(JAVA_INT, ADDRESS);
+            FunctionDescriptor.of(JAVA_INT, ADDRESS).asVariadic(ADDRESS, JAVA_INT);
     MethodHandle printfHandle = linker.downcallHandle(addr, printfDescriptor);
     var formatter = allocator.allocateUtf8String(str + "\n");
     var nameSegment = allocator.allocateUtf8String(name);
 
-    return (int) printfHandle.invoke(formatter, nameSegment, int);
+    return (int) printfHandle.invoke(formatter, nameSegment, age);
 }
 ```
 
