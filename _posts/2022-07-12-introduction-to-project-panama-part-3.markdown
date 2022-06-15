@@ -365,9 +365,3 @@ so Java version of C _printf_ invocation isn't really correspond to a simple "He
 The very first best thing about `jextract` isn't just the amount of code it generates for a library header file,
 but the quality of them that provide the ability to preserve or even improve the user experience working
 with the native C/C++ code but in Java.
-
-## Treating generated sources
-
-When you played enough with the sources it will be the time to give an answer to the following questions:
-1. Whether include into the VCS or not.
-Generate on a target host/OS.
