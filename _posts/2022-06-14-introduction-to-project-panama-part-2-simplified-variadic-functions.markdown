@@ -66,7 +66,7 @@ In Part 1, the C _printf_ **FunctionDescriptor** had the following implementatio
 ```java
 FunctionDescriptor function = FunctionDescriptor.of(
         JAVA_INT.withBitAlignment(32), ADDRESS.withBitAlignment(64)
-);
+        );
 ```
 The C _printf_ is a variadic function, but there is no indication of any variadic arguments in the function descriptor.
 
@@ -78,7 +78,7 @@ public final native @PolymorphicSignature Object invoke(Object... args) throws T
 So, no matter what kind of combination of named and variadic arguments is provided to call a native function, they must be passed either as array of **java.lang.Object** or as varargs:
 ```java
 var allArgs = new Object[] {namedArg1, ..., NamedArgN, varArg1, ..., varArgN};
-methodHandle.asSpreader(Object[].class, allArgs.length).invoke(allArgs);
+        methodHandle.asSpreader(Object[].class, allArgs.length).invoke(allArgs);
 ```
 or passed as varargs with named arguments first, followed by the variadic arguments, to preserve the order and comply with the **FunctionDescriptor** definition:
 ```java
@@ -106,7 +106,7 @@ In the case of the C _printf_, the JVM will check if it can safely convert a com
 In Part 1, the **MethodHandle::invoke** was called with a **java.lang.String** object enclosed into a memory segment (**MemorySegment**):
 ```java
 MemorySegment cString = memorySession.allocateUtf8String(str + "\n");
-int res = (int) printfMethodHandle.invoke(cString);
+        int res = (int) printfMethodHandle.invoke(cString);
 ```
 During the invocation, the JVM will create a method type using the arguments (`MethodHandle(MemorySegment)int`), the JVM will then attempt to convert it to a method type derived from the function descriptor:
 ```java
@@ -117,7 +117,7 @@ During the invocation, the JVM will create a method type using the arguments (`M
 Note: Such type converting procedure would be successful because the **MemorySegment** class implements the [Addressable interface](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Addressable.html).
 
 The key takeaway is that the JVM is leveraging the **FunctionDescriptor** return value and the argument layouts to create a method type.
-The argument types, order, quantity validation will be enforced by the JVM during the call of a native function
+The argument types, order, and quantity validation will be enforced by the JVM during the call of a native function
 because the components of a descriptor like a return value type and the argument layouts form a method type:
 ```java
 var emptyDescriptor = FunctionDescriptor.of(JAVA_INT);
@@ -181,7 +181,7 @@ System.out.println(Linker.downcallType(descriptorWithNamedAndVariadicArg));
 ```
 
 The attractiveness of variadic arguments is based on their variadic nature. However, using them can involve more work for the Java developer,
-like creating a new descriptor for each possible arguments combination and a related method handle.
+like creating a new descriptor for each possible argument combination and a related method handle.
 So, the following code will fail:
 ```java
 (int) printfHandle.invoke(namedArg, nameVararg); // method type: (MemorySegment,MemorySegment,Void)int
@@ -245,7 +245,7 @@ But, it can only do this if the method handle is a constant (defined as a static
 ## Conclusions
 
 There is a strong correlation between the declaration of a native function and how it is invoked, so a function must be invoked exactly as it was declared, i.e., there's no flexibility.
-This, unfortunately, impacts the implementation of the variadic function that requires to have a function descriptor defined with the variadic argument layouts before the invocation.
+This, unfortunately, impacts the implementation of the variadic function that requires having a function descriptor defined with the variadic argument layouts before the invocation.
 Such an approach contradicts the nature of the variadic arguments as often the number of variadic arguments, their types, and the order is unpredictable.
 
 So, Java developers would have to deal with the impacted flexibility and maintain the desired performance level
