@@ -5,7 +5,7 @@ date:   2022-06-6
 categories: openjdk panama
 tags: ["openjdk", "panama"]
 image_src_url: 'https://unsplash.com/photos/Wiwqd_8Rds8/download?ixid=MnwxMjA3fDB8MXxzZWFyY2h8OXx8cGFuYW1hfGVufDB8fHx8MTY1NDMyNzMwMg&force=true&w=800'
-excerpt: 'This article explores problems of variadic functions and possible implementations of variadic functions using Foreign Function and Memory API.'
+excerpt: 'This article explores problems of variadic functions and possible implementations of variadic functions using Foreign Function & Memory API.'
 ---
 
 ![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
@@ -15,29 +15,29 @@ on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_mediu
 
 ## Introduction
 
-This article explores Java native variadic functions using the Foreign Function and Memory API (Project Panama).
+This article explores Java native variadic functions using the Foreign Function & Memory API (Project Panama).
 
 ## C Variadic Functions in Java
 
 ### Part 1 recap
 
 The purpose of [Part 1]({{ '/openjdk/panama/2022/05/30/introduction-to-project-panama-part-1.html' | relative_url }})
-was to make an introduction to the Foreign Function and Memory API. As a practical task, Part 1 shows you how to implement a downcall to the C _printf_ function using corresponding API classes:
-* **SymbolLookup** -- to lookup a native function memory address.
-* **FunctionDescriptor** -- to declare a Java-based function descriptor containing a return value and argument layouts that correspond to the original signature in C.
-* **Linker** -- to create from a function descriptor and its native function address a (Java) method handle wrapping the native function
-* **MemorySession** -- for native memory segment allocation and de-allocation.
+was to introduce the Foreign Function & Memory API. As a practical task, Part 1 shows you how to implement a downcall to the C _printf_ function using corresponding API classes:
+* **SymbolLookup** -- Looking up a native function memory address.
+* **FunctionDescriptor** -- Declaring a Java-based function descriptor containing a return value and argument layouts that correspond to the original signature in C.
+* **Linker** -- Creating a method handle wrapping the native function from a function descriptor and its native function address.
+* **MemorySession** -- Allocating and de-allocating native memory segments.
 
 ### Revisiting C _printf_ Java implementation
 
 [Part 1]({{ '/openjdk/panama/2022/05/31/introduction-to-project-panama-part-1.html' | relative_url }}) contains a simplified implementation of a downcall to the C _printf_ function in Java.
-That code did not implement a key feature -- C variadic arguments for the _printf_ function.
+But that code did not implement a key feature -- C variadic arguments for the _printf_ function.
 The absence of variadic arguments made the C _printf_ implementation looks like the _PrintStream::println_ method rather than the _PrintStream::printf_ method from the Java standard library.
 
-The key difference between _PrintStream::println_ and _PrintStream::printf_ is the support of varargs in the latter, i.e., the _PrintStream::println_ is a simplified version of _PrintStream::printf_.
+The key difference between _PrintStream::println_ and _PrintStream::printf_ is the support of varargs in the latter, meaning the _PrintStream::println_ is a simplified version of _PrintStream::printf_.
 
-For the sake of simplicity, the “Hello World” example in part 1 did not implement the variadic contract for the C _printf_ function.
-This article will explain how to invoke from Java a native C variadic function (downcall) using the Foreign Function and Memory API.
+For the sake of simplicity, the “Hello World” example in Part 1 did not implement the variadic contract for the C _printf_ function.
+This article will explain how to invoke from Java a native C variadic function (downcall) using the Foreign Function & Memory API.
 
 ### Variadic functions, variadic arguments
 
@@ -47,7 +47,7 @@ The list of parameters of a variadic function should always start with at least 
 int     printf(const char * __restrict, ...);
 ```
 
-At the moment of a call to the variadic function, it accepts no more than 127 variadic arguments per function call:
+At the runtime, a function can accept no more than 127 variadic arguments per invocation:
 ```c
 printf("hello world");
 printf(" I'm a=%s, I'm b=%s", a, b);
@@ -57,8 +57,8 @@ In C/C++, variadic arguments don’t have any type associated with the signature
 ```java
 Object someMethod(Object... varargs);
 ```
-Java developers often use broad varargs type definition using **java.lang.Object** as all Java types inherit from it.
-With all those facts described above, we need to answer how to implement C variadic arguments using the Foreign Function and Memory API.
+Java developers often use the broad varargs type definition using **java.lang.Object** because all Java types are inherited from it.
+With all those facts described above, we now need to understand how to implement C variadic arguments using the Foreign Function & Memory API.
 
 ### Runtime representation of named and variadic arguments
 
@@ -90,7 +90,7 @@ Therefore, to perform a native call, the Java runtime must know the method handl
 
 #### Native function descriptor and method type
 
-The **FunctionDescriptor** is key to invoking method type validation of a native function (safe type converting) and is the only entity the JVM
+The **FunctionDescriptor** is key to invoking the method type validation of a native function (safe type converting) and is the only entity the JVM
 relies on when attempting to match the **MethodHandle::invoke** method type to the descriptor method type as a reference value.
 
 At runtime, **MethodHandle::invoke** is called, and the JVM attempts safe type converting between the [MethodType](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/invoke/MethodType.html) derived from a function descriptor
@@ -117,7 +117,7 @@ During the invocation, the JVM will create a method type using the arguments (`M
 Note: Such type converting procedure would be successful because the **MemorySegment** class implements the [Addressable interface](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Addressable.html).
 
 The key takeaway is that the JVM is leveraging the **FunctionDescriptor** return value and the argument layouts to create a method type.
-The various validation (argument types, order, quantity)  will be enforced by the JVM during the call of a native function
+The argument types, order, quantity validation will be enforced by the JVM during the call of a native function
 because the components of a descriptor like a return value type and the argument layouts form a method type:
 ```java
 var emptyDescriptor = FunctionDescriptor.of(JAVA_INT);
@@ -132,7 +132,7 @@ System.out.println(Linker.downcallType(descriptorWithNamedArg));
 ```
 
 
-## Implementing C variadic functions using the Foreign Function and Memory API
+## Implementing C variadic functions using the Foreign Function & Memory API
 
 The new Foreign Function & Memory API offers a method for the [explicit variadic arguments definition](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html#asVariadic(java.lang.foreign.MemoryLayout...)):
 ```java
@@ -180,8 +180,8 @@ System.out.println(Linker.downcallType(descriptorWithNamedAndVariadicArg));
 (Addressable,Addressable,int)int
 ```
 
-The attractiveness of variadic arguments is based on their variadic nature. However, using them involve more work for the Java developer,
-i.e. a descriptor for each possible variadic arguments combination and a related method handle should be created.
+The attractiveness of variadic arguments is based on their variadic nature. However, using them can involve more work for the Java developer,
+like creating a new descriptor for each possible arguments combination and a related method handle.
 So, the following code will fail:
 ```java
 (int) printfHandle.invoke(namedArg, nameVararg); // method type: (MemorySegment,MemorySegment,Void)int
@@ -203,7 +203,7 @@ The main challenge for Java developers is to maintain the combination of variadi
 Every new named and variadic arguments combination requires a new function descriptor and eventually a new related method handle.
 
 There is a strong dependency between invocation parameters, function descriptors, and method handles. An invocation **must** always comply with the function descriptor.
-If not -- it will lead to the exception.
+If not, it will lead to the exception.
 
 ## Flexibility and performance
 
@@ -211,10 +211,9 @@ A solution based on the variadic arguments declaration in advance will work in m
 At the same time, native functions like C _printf_ can handle a great variety of variadic arguments.
 So, the goal is to preserve the same level of flexibility during the invocation to functions like C _printf_.
 
-Unfortunately, the solution described in this article lacks the flexibility that variadic arguments offer, i.e.
-declaring variadic arguments in advance turns them into named ones, those arguments become mandatory.
+Unfortunately, the solution described in this article lacks the flexibility that variadic arguments offer. Declaring variadic arguments in advance turns them into a part of the method type, meaning those arguments become mandatory at invocation.
 
-Another concern is the performance impact as there are too many invocation-specific components, i.e., the runtime would have to create a new instance of a method handle for every variadic arguments combination.
+Another concern is the performance impact as there are too many invocation-specific components. For example, the runtime would have to create a new instance of a method handle for every variadic arguments combination.
 
 Think about the **Linker** as the compiler. It must know what kind of method handles it needs to create before the invocation.
 The sooner this happens, ideally at a JVM startup, the less impact it will cause on the application runtime.
@@ -240,17 +239,16 @@ The resulting method handles should be stored inside a static final field end an
 PrintfImpls.WithIntAndString.invoke(formatter, 42, stringMemorySegment);
 ```
 
-Note: The performance concern is more about the fact that the JIT compiler (C2) will try to inspect and pull apart a method handle,
-to compile a call through a method handled like a call to any normal Java method.
-But, it can only do this if the method handle is a constant (as seen by the compiler), i.e., defined as a static final field.
+Note: The performance concern is that the JIT compiler (C2) will try to inspect and pull apart a method handle, to compile a call through a method handled like a call to any normal Java method.
+But, it can only do this if the method handle is a constant (defined as a static final field).
 
 ## Conclusions
 
 There is a strong correlation between the declaration of a native function and how it is invoked, so a function must be invoked exactly as it was declared, i.e., there's no flexibility.
-This, unfortunately, impacts the implementation of the variadic function requiring to have a function descriptor defined with the variadic argument layouts before the invocation.
+This, unfortunately, impacts the implementation of the variadic function that requires to have a function descriptor defined with the variadic argument layouts before the invocation.
 Such an approach contradicts the nature of the variadic arguments as often the number of variadic arguments, their types, and the order is unpredictable.
 
-So, Java developers would have to deal with the impacted flexibility as well as maintain desired performance level
+So, Java developers would have to deal with the impacted flexibility and maintain the desired performance level
 by making the runtime responsible for invocations, but not for constructing downcall method handles prior to the invocation of a native function.
 
 Despite the not very pessimistic tone, there is another way to solve the problem of the variadic function by delegating
