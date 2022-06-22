@@ -4,11 +4,11 @@ title:  'Introduction to Project Panama. Part 2: Simply implementing variadic fu
 date:   2022-06-6
 categories: openjdk panama
 tags: ["openjdk", "panama"]
-image_src_url: 'https://unsplash.com/photos/Wiwqd_8Rds8/download?ixid=MnwxMjA3fDB8MXxzZWFyY2h8OXx8cGFuYW1hfGVufDB8fHx8MTY1NDMyNzMwMg&force=true&w=800'
+image_src_url: 'https://unsplash.com/photos/-st0dxfDyM0/download?ixid=MnwxMjA3fDB8MXxzZWFyY2h8MzR8fHBhbmFtYXxlbnwwfHx8fDE2NTU4OTQ2ODg&force=true&w=800'
 excerpt: 'This article explores problems of variadic functions and possible implementations of variadic functions using Foreign Function & Memory API.'
 ---
 
-![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
+![Panama]({{ '../images/openjdk-panama/luis-gonzalez--st0dxfDyM0-unsplash.jpg' | relative_url }})
 Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
 
