@@ -250,8 +250,8 @@ Such an approach contradicts the nature of the variadic arguments as often the n
 So, Java developers would have to deal with this lack of flexibility and maintain the desired performance level
 by making the runtime responsible for invocations, but not for constructing downcall method handles prior to the invocation of a native function.
 
-Despite the not very pessimistic tone, there is another way to solve the problem of the variadic function by delegating the infrastructure code provisioning for native functions to Project Panama code tool –- jextract
-whose goal is to generated Java source classes based on a C header file for the particular shared library. It will be covered in the next article
+Despite the pessimistic tone, there is a way to solve the challenge induced by variadic native functions, i.e. delegating the infrastructure code provisioning of native functions to `jextract`. 
+`jextract` is a tool developed by Project Panama whose goal is to generate Java source classes from a C header file and the related shared library, it will be covered in more detail in an upcoming article.
 
 ## Code listing
 
