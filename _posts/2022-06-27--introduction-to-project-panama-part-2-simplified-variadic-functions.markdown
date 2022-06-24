@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  'Introduction to Project Panama. Part 2: Simply implementing variadic functions.'
-date:   2022-06-6
+date:   2022-06-27
 categories: openjdk panama
 tags: ["openjdk", "panama"]
 image_src_url: 'https://unsplash.com/photos/-st0dxfDyM0/download?ixid=MnwxMjA3fDB8MXxzZWFyY2h8MzR8fHBhbmFtYXxlbnwwfHx8fDE2NTU4OTQ2ODg&force=true&w=800'
