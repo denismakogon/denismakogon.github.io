@@ -53,10 +53,11 @@ printf("hello world");
 printf(" I'm a=%s, I'm b=%s", a, b);
 ```
 
-In C/C++, variadic arguments don’t have any type associated in the function signature. In Java, it is the opposite -- the type of varargs is required:
+In C/C++, variadic arguments don’t have any type associated in the signature. In Java, it is the opposite -- the type of varargs is required:
 ```java
 Object someMethod(Object... varargs);
 ```
+
 Java developers often use the broad varargs type definition using **java.lang.Object** because all Java types are inherited from it.
 With all those facts described above, we now need to understand how to implement C variadic arguments using the Foreign Function & Memory API.
 
@@ -80,6 +81,7 @@ So, no matter what kind of combination of named and variadic arguments is provid
 var allArgs = new Object[] {namedArg1, ..., NamedArgN, varArg1, ..., varArgN};
         methodHandle.asSpreader(Object[].class, allArgs.length).invoke(allArgs);
 ```
+
 or passed as varargs with named arguments first, followed by the variadic arguments, to preserve the order and comply with the **FunctionDescriptor** definition:
 ```java
 methodHandle.invoke(namedArg1, ..., NamedArgN, varArg1, ..., varArgN);
@@ -90,8 +92,7 @@ Therefore, to perform a native call, the Java runtime must know the method handl
 
 #### Native function descriptor and method type
 
-The **FunctionDescriptor** is key to invoking the method type validation of a native function (safe type converting) and is the only entity the JVM
-relies on when attempting to match the **MethodHandle::invoke** method type to the function descriptor method type.
+The **FunctionDescriptor** is key to invoking the method type validation of a native function (safe type converting) and is the only entity the JVM relies on when attempting to match the **MethodHandle::invoke** method type to the function descriptor method type.
 
 At runtime, **MethodHandle::invoke** is called, and the JVM attempts safe type converting between the [MethodType](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/invoke/MethodType.html) derived from a function descriptor
 ```java
@@ -108,13 +109,14 @@ In Part 1, the **MethodHandle::invoke** was called with a **java.lang.String** o
 MemorySegment cString = memorySession.allocateUtf8String(str + "\n");
         int res = (int) printfMethodHandle.invoke(cString);
 ```
+
 During the invocation, the JVM will create a method type using the arguments (`MethodHandle(MemorySegment)int`), the JVM will then attempt to convert it to a method type derived from the function descriptor:
 ```java
 //    <descriptor method type>       <invoke method type>
 ( MethodHandle(Addressable)int ) MethodHandle(MemorySegment)int
 ```
 
-Note: Such type converting procedure will succeed because the **MemorySegment** interface implements the [Addressable interface](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Addressable.html).
+Note: Such type converting procedure will succeed because the **MemorySegment** interface extends the [Addressable interface](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/Addressable.html).
 
 The key takeaway is that the JVM is leveraging the **FunctionDescriptor** return value and the argument layouts to create a method type.
 It means that the argument types, order, and quantity as well as the return value type validation will be enforced by the JVM during the invocation of a native function:
@@ -130,7 +132,6 @@ System.out.println(Linker.downcallType(descriptorWithNamedArg));
 (Addressable)int
 ```
 
-
 ## Implementing C variadic functions using the Foreign Function & Memory API
 
 The new Foreign Function & Memory API offers a method for the [explicit variadic arguments definition](https://download.java.net/java/early_access/jdk19/docs/api/java.base/java/lang/foreign/FunctionDescriptor.html#asVariadic(java.lang.foreign.MemoryLayout...)):
@@ -138,7 +139,8 @@ The new Foreign Function & Memory API offers a method for the [explicit variadic
 public FunctionDescriptor asVariadic(MemoryLayout... variadicLayouts)
 ```
 
-The argument layouts provided to the **FunctionDescriptor** builder through **FunctionDescriptor::asVariadic** will become a mandatory part of a method type following the named argument types:
+The argument layouts provided to the **FunctionDescriptor** builder through the **FunctionDescriptor::asVariadic** 
+will become a mandatory part of a method type following the named argument types:
 ```java
 var descriptorWithNamedAndVariadicArg = descriptorWithNamedArg
         .asVariadic(ADDRESS, JAVA_INT);
@@ -186,11 +188,13 @@ So, the following code will fail:
 (int) printfHandle.invoke(namedArg, nameVararg); // method type: (MemorySegment,MemorySegment,Void)int
 (int) printfHandle.invoke(namedArg); // method type: (MemorySegment,Void,Void)int
 ```
+
 Each call to the C _printf_ will fail with the corresponding exception:
 ```java
 Exception in thread "main" java.lang.RuntimeException: java.lang.invoke.WrongMethodTypeException: 
     cannot convert MethodHandle(Addressable,Addressable,int)int to (MemorySegment,MemorySegment,Void)int
 ```
+
 and
 ```java
 Exception in thread "main" java.lang.RuntimeException: java.lang.invoke.WrongMethodTypeException: 
@@ -210,7 +214,7 @@ A solution based on the variadic arguments declaration in advance will work in m
 At the same time, native functions like C _printf_ can handle a great variety of variadic arguments.
 So, the goal is to preserve the same level of flexibility during the invocation to functions like C _printf_.
 
-Unfortunately, the solution described in this article lacks the flexibility that variadic arguments offer. Declaring variadic arguments in advance turns them into an internal part of the method type, meaning those arguments become mandatory at invocation.
+Unfortunately, the solution described in this article lacks the flexibility that variadic arguments offer. Declaring variadic arguments in advance turns them into an integral part of the method type, meaning those arguments become mandatory at invocation.
 
 Another concern is the performance impact as there are too many invocation-specific components. For example, the runtime would have to create a new instance of a method handle for every variadic arguments combination.
 
@@ -246,8 +250,8 @@ Such an approach contradicts the nature of the variadic arguments as often the n
 So, Java developers would have to deal with this lack of flexibility and maintain the desired performance level
 by making the runtime responsible for invocations, but not for constructing downcall method handles prior to the invocation of a native function.
 
-Despite the not very pessimistic tone, there is another way to solve the problem of the variadic function by delegating
-the infrastructure code provisioning for native functions to Project Panama code generating tool -- jextract.
+Despite the not very pessimistic tone, there is another way to solve the problem of the variadic function by delegating the infrastructure code provisioning for native functions to Project Panama code tool –- jextract
+whose goal is to generated Java source classes based on a C header file for the particular shared library. It will be covered in the next article
 
 ## Code listing
 
