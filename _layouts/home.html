@@ -17,7 +17,11 @@ layout: default
         {%- assign date_format = site.minima.date_format | default: "%b %-d, %Y" -%}
         <span class="post-meta">{{ post.date | date: date_format }}</span>
         <h3>
+          {% if post.redirect_url %}
+          <a class="post-link" href="{{ post.redirect_url }}">
+          {% else %}
           <a class="post-link" href="{{ post.url | relative_url }}">
+          {% endif %}
             {{ post.title | escape }}
           </a>
         </h3>
