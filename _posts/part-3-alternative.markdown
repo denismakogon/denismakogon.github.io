@@ -12,18 +12,18 @@ language: English
 ## Introduction
 
 Both [Part 1](https://denismakogon.github.io/openjdk/panama/2022/05/31/introduction-to-project-panama-part-1.html) and [Part 2](https://inside.java/2022/06/27/introduction-to-project-panama-part-2/) shown that Project Panama offers a great framework (Foreign Function & Memory API) designed to build and invoke C native code.
-While Part 1 was mostly an introduction to components necessary to declare a native function in Java, the purpose of Part 2 was to dig dipper into the aspects of the variadic functions representation in Java. 
-This article will go even deeper into details of the variadic functions implementation provided in Part 2 as well as aspects of the implementation offered by the Project Panama code generating tool -- [jextract](https://github.com/openjdk/jextract).
+While Part 1 was mostly an introduction to components necessary to declare a native function in Java, the purpose of Part 2 was to dig deeper into the aspects of the representation of the variadic function in Java.
+This article will go even deeper into details of the implementation of the variadic function provided in Part 2 as well as aspects of the implementation offered by the Project Panama code generating tool -- [jextract](https://github.com/openjdk/jextract).
 
 ## Source code compiling
 
 ### C code
 
 In Java, the compiler (`javac`) turns [source code into bytecode](https://en.wikibooks.org/wiki/Java_Programming/Compilation#:~:text=In%20Java%2C%20programs%20are%20not%20compiled%20into%20executable%20files%3B%20they%20are%20compiled%20into%20bytecode) while the C programs are compiled into a machine code.
-It means that the C compiler must exactly tell to the runtime (the operating system) what and how a program will execute.
+It means that the C compiler must exactly tell the runtime (the operating system) what and how a program will execute.
 
 For functions accepting variadic arguments like the C _printf_, the compiler will have to create a specific version of the C _printf_ function that will correspond to the invocation signature.
-For instance, the C _printf_ invocations down below will make the compiler to create two different version of the same function:
+For instance, the C _printf_ invocations down below will make the compiler create two different versions of the same function:
 ```java
 #include <stdio.h>
 
@@ -39,20 +39,20 @@ int(const char*, const char*);
 int(const char*, const char*, const int);
 ```
 
-Comparing to Java methods that accepting the varargs, it's obvious that it does not relate to the C variadic function because varargs always have type (`Object... varargs`) definition.
-Java varargs does not directly map to the C variadic arguments because the ability to invoke a _variable typed arity_ (vararg) method is a Java langauge feature described in [Java Language Specification](https://docs.oracle.com/javase/specs/jls/se18/html/jls-15.html#jls-15.12.2.4). 
-It means that Java compiler will create a generic representation of a Java method that accepts the varargs in bytecode while the JVM will handle the invocation of such method using runtime-based arguments  (types, order and quantity).
+Compared to Java methods that accept the varargs, it's obvious that it does not relate to the C variadic function because varargs always have a type (`Object... varargs`) definition.
+Java varargs do not directly map to the C variadic arguments because the ability to invoke a _variable typed arity_ (vararg) method is a Java language feature described in [Java Language Specification](https://docs.oracle.com/javase/specs/jls/se18/html/jls-15.html#jls-15.12.2.4).
+It means that the Java compiler will create a generic representation of a Java method that accepts the varargs in bytecode while the JVM will handle the invocation of such method using runtime-based arguments  (types, order, and quantity).
 
 ### C code in Java
 
-The takeaway is that Java runtime can handle dynamic varargs at the runtime, but it's not the thing for C because the variadic argument types, order, and quantity definition happen at compile time.
-However, if we would compare Java varargs to the C variadic arguments written using the Foreign Function & Memory API it would be clear that a developer have to do exactly what the C compiler does against programs written in C.
+The takeaway is that the Java runtime can handle dynamic varargs at the runtime. However, it's not the thing for C because the variadic argument types, order, and quantity definition happen at compile time.
+However, if we would compare Java varargs to the C variadic arguments written using the Foreign Function & Memory API it would be clear that a developer has to do exactly what the C compiler does against programs written in C.
 In this context, think about **Linker** as the C compiler and the **FunctionDescriptor** as a hint to the compiler explaining how a native function would be invoked.
-It appears to be that the Foreign Function & Memory API mission is to let developers write C programs in Java and compile these programs in Java runtime.
+It appears to be that the Foreign Function & Memory API's mission is to let developers write C programs in Java and compile these programs in Java runtime.
 
-The reason why Part 2 was focused on a function descriptor declaration as on the most important component of the native function invocation.
-But now we know that the **FunctionDescriptor** is the equivalent of the C source code that still has to be compiled in Java runtime. 
-The sooner this happens, the less impact the compiling will cause on the application runtime. 
+The reason why Part 2 was focused on a function descriptor declaration as to the most important component of the native function invocation.
+But now we know that the **FunctionDescriptor** is the equivalent of the C source code that still has to be compiled in Java runtime.
+The sooner this happens, the less impact the compiling will cause on the application runtime.
 So, a function descriptor must be "compiled" into the method handle as early as possible:
 ```java
 class PrintfImpls {
@@ -76,40 +76,40 @@ class PrintfImpls {
 }
 ```
 
-Ideally, at JVM startup. At that stage the JIT compiler will try to inspect and pull apart constant method handles (defined as a static final field), 
-to compile every call through a method handle like a call to any normal Java method causing the lowest performance impact on the application runtime.
+Ideally, at JVM startup. At that stage, the JIT compiler will try to inspect and pull apart constant method handles (defined as a static final field),
+to compile every call through a method handled like a call to any normal Java method causing the lowest performance impact on the application runtime.
 
-Such behaviour aligns with the logic of the C compiler, but in Java, the "compiling" happen during the startup prior hitting the application entry point, 
+Such behavior aligns with the logic of the C compiler, but in Java, the "compiling" happens during the startup before hitting the application entry point,
 so the application benefit from using "statically compiled" method handles (with the corresponding method type derived from the descriptor) instead of creating an instance of a method handle whenever it's necessary to invoke a native function.
 
-The approach described in Part 1 and Part 2 is based on the fact that a developer must create a function descriptor (and a method handle) 
+The approach described in Part 1 and Part 2 is based on the fact that a developer must create a function descriptor (and a method handle)
 that correspond to a certain C function mentioned in a C header file (like the C _printf_ in [stdio.h](https://cplusplus.com/reference/cstdio/)).
-The problem is that a developer is not focused on building the application that uses native function, but spend some time writing the infrastructure code for native functions (linker, symbol lookup, method handles).
+The problem is that a developer is not focused on building the application that uses the native function, but spends some time writing the infrastructure code for native functions (linker, symbol lookup, method handles).
 
-This is one of the problems that Project Panama code generating tools aim to solve -- to provide a tooling (`jextract`) for generating the infrastructure code around C native function that belong to a particular C library.
-So, the only responsibilities that developer will have to take is a memory management and the invocation.
+This is one of the problems that Project Panama code generating tools aim to solve -- to provide tooling (`jextract`) for generating the infrastructure code around the C native function that belongs to a particular C library.
+So, the only responsibilities that the developer will have to take are memory management and invocation.
 
 ## `jextract` prerequisites
 
-Interesting fact, `jextract` is the first code tool that is a part of the OpenJDK but not a part of the distribution like any other JDK tools.
-Basically, the `jextract` tool  is a standalone project and a deliverable of the Project Panama under the OpenJDK umbrella.
+Interesting fact, `jextract` is the first code tool that is a part of the OpenJDK but not a part of the distribution like any other JDK tool.
+The `jextract` tool is a standalone project and a deliverable of Project Panama under the OpenJDK umbrella.
 
-There are a few reasons why it's not a part of the JDK distribution. First, not all Java developers are the JNI consumers, i.e., not all developers use `javac -h`, so the `jextract` tool  is not for everyone.
-The second and probably the most critical reason -- it's HUGE. Normally, size of the JDK is somewhat around 360Mb, the `jextract` tool  adds on top around 177Mb.
-Indeed, it is that big. However, the `jextract` tool  is not a typical tool that depends on the JDK internals.
+There are a few reasons why it's not a part of the JDK distribution. First, not all Java developers are the JNI consumers, i.e., not all developers use `javac -h`, so the `jextract` tool is not for everyone.
+The second and probably the most critical reason -- it's HUGE. Normally, the size of the JDK is somewhat around 360Mb, the `jextract` tool adds on top around 177Mb.
+Indeed, it is that big. However, the `jextract` tool is not a typical tool that depends on the JDK internals.
 the `jextract` tool  depends on:
 * the JDK 19 or greater (Foreign Function & Memory API, in particular), 360Mb,
 * [libclang](https://github.com/llvm/llvm-project) -- C interface to the Clang, 560Mb.
 
 ### libclang
 
-As mentioned earlier, the `jextract` tool  tool creates the infrastructure Java code for a C library.
+As mentioned earlier, the `jextract` tool creates the infrastructure Java code for a C library.
 If you aren't familiar with the Clang it is the C++ (and other C language family) compiler. It is responsible for:
 - translating C source code into some intermediate state (also called as "front-end"),
-- translate C source code intermedia state into machine code (also called as "back-end", Clang uses LLVM for it).
+- translate C source code intermedia state into machine code (also called "back-end", Clang uses LLVM for it).
 
-But the most important thing that Clang isn't just a compiler, it's also a library so-called "C interface to Clang". 
-So, the `jextract` tool  doesn't use its own type of parser for reading C header files, it uses [libclang](https://github.com/llvm/llvm-project) instead.
+But the most important thing is that Clang isn't just a compiler, it's also a library so-called "C interface to Clang".
+So, the `jextract` tool doesn't use its type of parser for reading C header files, it uses [libclang](https://github.com/llvm/llvm-project) instead.
 
 ### JDK
 
@@ -118,22 +118,22 @@ but also to create a descriptor, a method handle for each C native function ment
 
 ## Using `jextract`
 
-The best way to understand what the `jextract` tool  does it's better to look at what it generates for the C stdio library.
+The best way to understand what the `jextract` tool does it's better to look at what it generates for the C stdio library.
 
 ### Building from source
 
-As mentioned before, `jextract` is a first standalone JDK code tool that is not a part of the OpenJDK distribution.
-It means that to start working with the `jextract` tool it's necessary to obtain its binary. 
+As mentioned before, `jextract` is the first standalone JDK code tool that is not a part of the OpenJDK distribution.
+It means that to start working with the `jextract` tool it's necessary to obtain its binary.
 
-As of now, there are no binary releases available at `jextract` GitHub repo. So, it's necessary to build one from sources.
-So, in order to build `jextract` from source code it's necessary to:
+As of now, there are no binary releases available at the `jextract` GitHub repo. So, it's necessary to build one from sources.
+So, to build `jextract` from source code, it's necessary to:
 
-- Install the JDK 19 EA build and set is as the default version:
+- Install the JDK 19 EA build and set it as the default version:
 ```shell
 sdk install java 19.ea.28-open
 ```
 
-- Check Java version:
+- Check the Java version:
 ```shell
 java -version
 
@@ -156,9 +156,9 @@ git clone https://github.com/openjdk/jextract.git && cd jextract
 sh ./gradlew -Pjdk19_home=${HOME}/.sdkman/candidates/java/19.ea.28-open -Pllvm_home=${HOME}/clang/llvm clean verify
 ```
 
-Note: Clang distribution archives are both platform and the CPU architecture specific, [here](https://github.com/llvm/llvm-project/releases/tag/llvmorg-13.0.0) you may find AMD64 and AARCH64 builds of Linux and Windows.
+Note: Clang distribution archives are both platform and CPU architecture-specific, [here](https://github.com/llvm/llvm-project/releases/tag/llvmorg-13.0.0) you may find AMD64 and AARCH64 builds of Linux and Windows.
 
-As the result, `gradlew` will create Java custom runtime:
+As the result, `gradlew` will create a Java custom runtime:
 ```shell
 build/jextract
 ├── bin
@@ -185,7 +185,7 @@ DIR=`dirname $0`
 $DIR/java $JLINK_VM_OPTIONS -m org.openjdk.jextract/org.openjdk.jextract.JextractTool "$@"
 ```
 
-The last step to make the `jextract` tool consumable outside of build folder it's necessary to extend system `$PATH` definition with `build/jextract/bin` folder:
+The last step to make the `jextract` tool consumable outside of the build folder it's necessary to extend the system `$PATH` definition with `build/jextract/bin` folder:
 ```shell
 export PATH=$PATH:$PWD/build/jextract/bin
 ```
@@ -201,7 +201,7 @@ clang version 13.0.1
 ### Exploring `jextract`
 
 Once the `jextract` tool is ready and functional, it's time to explore its capabilities.
-The main purpose of `jextract` is to mechanically generates Java bindings from C native library headers.
+The main purpose of `jextract` is to mechanically generate Java bindings from C native library headers.
 
 To generate Java source it's necessary to instruct the `jextract` tool as follows:
 ```shell
@@ -212,7 +212,7 @@ Note: On macOS, C stdlib include folder (a path under `-I` option) located here:
 
 This command tells to `jextract` to generate Java source classes for `/usr/include/stdio.h` which base include folder is `/usr/include`, resulting classes must be placed at `src/main/java` within `com.clang.stdlib.stdio` package.
 Note that options like `-I` (include folder) is the same options presented in the `clang` compiler. However, option `-l` (not mentioned in the command above) is a combination of two `gcc` flags: `-L <dir>` and `-l <library-name>`.
-Because `jextract` `-l` option provides a certain level of flexibility, a value for this option could be either a library name or its absolute path.
+Because the `jextract` `-l` option provides a certain level of flexibility, a value for this option could be either a library name or its absolute path.
 
 ### Exploring package content
 
@@ -258,12 +258,12 @@ src/main/java/com/clang/stdlib/stdio
 
 ### Advanced usage
 
-As you see, the `jextract` tool generates a lot of Java sources for C `stdio.h` header file. Not all of those header files may be required to execute the particular C function.
+As you see, the `jextract` tool generates a lot of Java sources for the C `stdio.h` header file. Not all of those header files may be required to execute the particular C function.
 So, `jextract` has the option to check what kind of content would be created:
 ```shell
 --dump-includes <file>         dump included symbols into specified file
 ```
-This option will instruct the `jextract` tool to create a file containing all native symbols it could potentially generate. 
+This option will instruct the `jextract` tool to create a file containing all native symbols it could potentially generate.
 A newly created file will contain a combination of the following option values:
 ```shell
 --header-class-name <name>         
@@ -287,7 +287,7 @@ For instance:
 --include-function printf
 ```
 
-Filtering help to avoid unnecessary Java source files as well as redundant functions, macros, structs, vars and typedefs.
+Filtering helps to avoid unnecessary Java source files as well as redundant functions, macros, structs, vars, and typedefs.
 If `--dump-includes` is specified, `jextract` will only create this file, but will not generate sources.
 
 To use this file simply addi it to a list of parameters:
@@ -295,7 +295,7 @@ To use this file simply addi it to a list of parameters:
 jextract --source -t com.clang.stdlib.stdio -I /usr/include --output src/main/java  @dump.txt /usr/include/stdio.h
 ```
 
-Note: It's highly important to know what you are doing, it may appear that there is a dependency between components of a header file, like `stdio.h` `FILE` and `_sFILE` (where's `FILE` is an alias to the `sFILE` typedef).
+Note: It's essential to know what you are doing, there may be a dependency between components of a header file, like `stdio.h` `FILE` and `_sFILE` (where's `FILE` is an alias to the `sFILE` typedef).
 Excluding one may lead to problems with others.
 
 
@@ -318,7 +318,7 @@ src/main/java/com/clang/stdlib/stdio
 0 directories, 4 files
 ```
 
-Generated Java sources will contain bare minimum code necessary to invoke the C _printf_ function, a descriptor and a method handle:
+Generated Java sources will contain the bare minimum code necessary to invoke the C _printf_ function, a descriptor, and a method handle:
 ```java
 class constants$0 {
 
@@ -351,9 +351,9 @@ public class stdio_h  {
 }
 ```
 
-With the `jextract` tool the path from identifying C native library necessary to the actual integration of it into 
+With the `jextract` tool the path from identifying the C native library necessary to the actual integration of it into
 Java application is much shorter compared to the approach described in Part 1 and Part 2.
-So, the only thing that a developer become responsible for is a native memory allocation and function integration.
+So, the only thing that a developer becomes responsible for is a native memory allocation and function integration.
 
 The amount of work necessary to be done prior invoking a native function requires a lot less time and efforts:
 ```java
@@ -371,20 +371,20 @@ public class Printf {
 }
 ```
 
-You see, with the `jextract` tool, it's all comes down to a question how to invoke native functions, but not how to implement infrastructure around them.
+You see, with the `jextract` tool, it all comes down to a question of how to invoke native functions, but not how to implement infrastructure around them.
 At the same time, `jextract` provides enough capabilities to turn C headers into Java source code.
 
-Filtering capability helps to be specific regarding what exactly has to be extracted from a header file. 
-However, the `jextract` tool doesn't track native symbol dependencies, for instance, a function 
-`int	 vfscanf(FILE * __restrict __stream, const char * __restrict __format, va_list)` depends on `FILE` C struct.
-But the attempt to extract `vfscanf` would not make `FILE` struct Java representation appear magically.
-So, it's highly important to be explicit on what exactly you'd like to have as a result, the `jextract` tool is about repeatable extraction process, where no magic occurs.
-In other words, attempting to identify a dependency graph seems to be serving `jextract` users that don't want to extract the full thing, 
-but don't want to be specific enough to define their filtering. That's why filtering should be considered as the advanced usage.
+Filtering capability helps to be specific regarding what exactly has to be extracted from a header file.
+However, the `jextract` tool doesn't track native symbol dependencies, for instance, a function
+`int    vfscanf(FILE * __restrict __stream, const char * __restrict __format, va_list)` depends on `FILE` C struct.
+But attempting to extract `vfscanf` would not make the `FILE` struct Java representation appear magically.
+So, it's highly important to be explicit on what exactly you'd like to have as a result, the `jextract` tool is about a repeatable extraction process, where no magic occurs.
+In other words, attempting to identify a dependency graph seems to be serving `jextract` users that don't want to extract the full thing,
+but don't want to be specific enough to define their filtering. That's why filtering should be considered an advanced feature.
 
 ### To be continued
 
-In the next post we'll explore a package structure as well as Java classes content provided by `jextract`.
+In the next post, we'll explore a package structure as well as Java classes content provided by `jextract`.
 
 
 ## Code listing
