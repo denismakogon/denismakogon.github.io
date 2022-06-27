@@ -14,8 +14,10 @@ layout: default
     <ul class="post-list">
       {%- for post in site.posts -%}
       <li>
+        <br/>
         {%- assign date_format = site.minima.date_format | default: "%b %-d, %Y" -%}
         <span class="post-meta">{{ post.date | date: date_format }}</span>
+        <span class="post-meta">| Language: {{ post.language }}</span>
         <h3>
           {% if post.redirect_url %}
           <a class="post-link" href="{{ post.redirect_url }}">
@@ -26,13 +28,19 @@ layout: default
           </a>
         </h3>
         {%- if site.show_excerpts -%}
-          {{ post.excerpt }}
+        <img src="{{ post.image_src_url }}" alt="drawing" style="width: 15%; float: left; padding-right: 20px;"/>
+        <span style="font-size: 11px" class="post-meta">{{ post.excerpt | strip_html }}</span>
+
+        <p></p>
         {%- endif -%}
       </li>
       {%- endfor -%}
     </ul>
-
-    <p class="rss-subscribe">subscribe <a href="{{ "/feed.xml" | relative_url }}">via RSS</a></p>
+    <p></p>
   {%- endif -%}
-
+  <br/>
+  <p></p>
+  <p></p>
+  <p></p>
+  <p style="float: right" class="rss-subscribe">subscribe <a href="{{ "/feed.xml" | relative_url }}">via RSS</a></p>
 </div>
