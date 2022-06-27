@@ -5,7 +5,8 @@ date:   2022-05-31
 categories: openjdk panama
 tags: ["openjdk", "panama"]
 image_src_url: 'https://unsplash.com/photos/Wiwqd_8Rds8/download?ixid=MnwxMjA3fDB8MXxzZWFyY2h8OXx8cGFuYW1hfGVufDB8fHx8MTY1NDMyNzMwMg&force=true&w=800'
-excerpt: 'This article introduces the Foreign Function & Memory API using a simple Java-based "Hello World" application invoking some C native code'
+excerpt: 'This article introduces the Foreign Function & Memory API using a simple Java-based "Hello World" application invoking some C native code.'
+language: English
 ---
 
 ![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
