@@ -1,19 +1,26 @@
 ---
 layout: post
-title:  'Introduction to Project Panama. Part 3: The jextract code tool'
-#date:   2022-06-21
+title: 'Introduction to Project Panama. Part 3: jextract'
+date: 2022-06-30
 categories: openjdk panama
 tags: ["openjdk", "panama"]
 image_src_url: 'https://unsplash.com/photos/Wiwqd_8Rds8/download?ixid=MnwxMjA3fDB8MXxzZWFyY2h8OXx8cGFuYW1hfGVufDB8fHx8MTY1NDMyNzMwMg&force=true&w=800'
-excerpt: 'This article explores problems of variadic functions and possible implementations of variadic functions using Foreign Function and Memory API.'
+excerpt: 'This article introduces the Foreign Function & Memory API using a simple Java-based "Hello World" application invoking some C native code.'
 language: English
 ---
 
+![Panama]({{ '../images/openjdk-panama/luis-gonzalez-Wiwqd_8Rds8-unsplash.jpg' | relative_url }})
+
+Photo by [Luis Gonzalez](https://unsplash.com/@luchox23?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
+on [Unsplash](https://unsplash.com/s/photos/panama?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
+    
+
 ## Introduction
 
-Both [Part 1](https://denismakogon.github.io/openjdk/panama/2022/05/31/introduction-to-project-panama-part-1.html) and [Part 2](https://inside.java/2022/06/27/introduction-to-project-panama-part-2/) shown that Project Panama offers a great framework (Foreign Function & Memory API) designed to build and invoke C native code.
-While Part 1 was mostly an introduction to components necessary to declare a native function in Java, the purpose of Part 2 was to dig deeper into the aspects of the representation of the variadic function in Java.
-This article will go even deeper into details of the implementation of the variadic function provided in Part 2 as well as aspects of the implementation offered by the Project Panama code generating tool -- [jextract](https://github.com/openjdk/jextract).
+Both [Part 1](https://denismakogon.github.io/openjdk/panama/2022/05/31/introduction-to-project-panama-part-1.html) and [Part 2](https://inside.java/2022/06/27/introduction-to-project-panama-part-2/) show that Project Panama offers a great framework (Foreign Function & Memory API) designed to build and invoke C native code. 
+While Part 1 was mostly an introduction to components necessary to declare a native function in Java, the purpose of Part 2 was to dig deeper into the aspects 
+of the representation of the variadic function in Java. This article will go even deeper into details of the implementation of the variadic function provided 
+in Part 2 as well as aspects of the implementation offered by the Project Panama code generating tool -- [jextract](https://github.com/openjdk/jextract).
 
 ## Source code compiling
 
@@ -89,7 +96,7 @@ The problem is that a developer is not focused on building the application that 
 This is one of the problems that Project Panama code generating tools aim to solve -- to provide tooling (`jextract`) for generating the infrastructure code around the C native function that belongs to a particular C library.
 So, the only responsibilities that the developer will have to take are memory management and invocation.
 
-## `jextract` prerequisites
+## Prerequisites
 
 Interesting fact, `jextract` is the first code tool that is a part of the OpenJDK but not a part of the distribution like any other JDK tool.
 The `jextract` tool is a standalone project and a deliverable of Project Panama under the OpenJDK umbrella.
@@ -111,12 +118,12 @@ If you aren't familiar with the Clang it is the C++ (and other C language family
 But the most important thing is that Clang isn't just a compiler, it's also a library so-called "C interface to Clang".
 So, the `jextract` tool doesn't use its type of parser for reading C header files, it uses [libclang](https://github.com/llvm/llvm-project) instead.
 
-### JDK
+### JDK 19
 
 Interesting that the `jextract` tool  uses Foreign Function & Memory API not only to access data structures created by the `libclang` for the particular C header file,
 but also to create a descriptor, a method handle for each C native function mentioned in a header file as well as a runtime helper class containing common utility functionality.
 
-## Using `jextract`
+## Using jextract
 
 The best way to understand what the `jextract` tool does it's better to look at what it generates for the C stdio library.
 
@@ -126,30 +133,19 @@ As mentioned before, `jextract` is the first standalone JDK code tool that is no
 It means that to start working with the `jextract` tool it's necessary to obtain its binary.
 
 As of now, there are no binary releases available at the `jextract` GitHub repo. So, it's necessary to build one from sources.
-So, to build `jextract` from source code, it's necessary to:
-
-- Install the JDK 19 EA build and set it as the default version:
+So, to build `jextract` from source code, it's necessary to install the JDK 19 EA build and set it as the default version:
 ```shell
 sdk install java 19.ea.28-open
 ```
 
-- Check the Java version:
-```shell
-java -version
-
-openjdk version "19-ea" 2022-09-20
-OpenJDK Runtime Environment (build 19-ea+28-2110)
-OpenJDK 64-Bit Server VM (build 19-ea+28-2110, mixed mode, sharing)
-```
-
-- Obtain Clang build (version 9 or greater):
+Obtain Clang build (version 9 or greater):
 ```shell
 mkdir ${HOME}/clang/llvm
 wget -O clang+llvm-13.0.0-x86_64-apple-darwin.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-apple-darwin.tar.xz
 tar --strip-components=1 -xvf clang+llvm-13.0.0-x86_64-apple-darwin.tar.xz -C ${HOME}/clang/llvm
 ```
 
-- Clone `jextract` source code and run the build it:
+Clone `jextract` source code and run the build it:
 ```shell
 git clone https://github.com/openjdk/jextract.git && cd jextract
 
@@ -170,12 +166,12 @@ build/jextract
 ```
 which is almost the same as the one provided through `-Djdk19_home` except few things, it was built with a new Java module containing the `jextract` functionality and a shell script:
 ```shell
-file build/jmods/org.openjdk.jextract.jmod 
+$ file build/jmods/org.openjdk.jextract.jmod 
 
 build/jmods/org.openjdk.jextract.jmod: Java jmod module version 1.0
 ```
 ```shell
-file build/jextract/bin/jextract  && cat build/jextract/bin/jextract 
+$ file build/jextract/bin/jextract  && cat build/jextract/bin/jextract 
 
 build/jextract/bin/jextract: POSIX shell script text executable, ASCII text
 
@@ -185,7 +181,7 @@ DIR=`dirname $0`
 $DIR/java $JLINK_VM_OPTIONS -m org.openjdk.jextract/org.openjdk.jextract.JextractTool "$@"
 ```
 
-The last step to make the `jextract` tool consumable outside of the build folder it's necessary to extend the system `$PATH` definition with `build/jextract/bin` folder:
+The last step to make the `jextract` tool consumable outside the build folder it's necessary to extend the system `$PATH` definition with `build/jextract/bin` folder:
 ```shell
 export PATH=$PATH:$PWD/build/jextract/bin
 ```
@@ -208,7 +204,10 @@ To generate Java source it's necessary to instruct the `jextract` tool as follow
 jextract --source -t com.clang.stdlib.stdio -I /usr/include --output src/main/java /usr/include/stdio.h
 ```
 
-Note: On macOS, C stdlib include folder (a path under `-I` option) located here: `/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include`
+Note: On macOS, C stdlib include folder (a path under `-I` option) located here:
+```shell
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
+```
 
 This command tells to `jextract` to generate Java source classes for `/usr/include/stdio.h` which base include folder is `/usr/include`, resulting classes must be placed at `src/main/java` within `com.clang.stdlib.stdio` package.
 Note that options like `-I` (include folder) is the same options presented in the `clang` compiler. However, option `-l` (not mentioned in the command above) is a combination of two `gcc` flags: `-L <dir>` and `-l <library-name>`.
