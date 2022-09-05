@@ -49,7 +49,7 @@ The [vararg](https://docs.oracle.com/javase/specs/jls/se18/html/jls-15.html#jls-
 
 ### C code in Java
 
-The same infrastructure code for C _printf_ written in Java using Foreign Function & Memory API will explicitly show that a developer will have to do exactly what the C compiler does.
+The infrastructure code for C _printf_ written in Java using Foreign Function & Memory API will explicitly show that a developer will have to do exactly what the C compiler does.
 
 For each combination of variadic arguments, it's necessary to create a specialized variant of the **MethodHandle**. In situations like this, the **Linker** acts like the C compiler and the **FunctionDescriptor** as the **MethodType** holder:
 ```java
@@ -88,7 +88,7 @@ The biggest concern is that a developer is not focused on building the applicati
 This is one of the problems that Project Panama aims to solve is to provide tooling ([jextract](https://github.com/openjdk/jextract)) for generating the infrastructure code around the C native function that belongs to a particular C library.
 So, the only responsibilities that the developer will have a focus on the invocations.
 
-## Prerequisites
+## jextract
 
 Interesting fact, a new code generating tool is the first code tool that is a part of the OpenJDK but not a part of the distribution like any other JDK code tool.
 There are a few reasons why it's not a part of the JDK distribution. First, not all Java developers work with native code so the `jextract` tool is not for everyone.
@@ -119,7 +119,7 @@ model the infrastructure code for a native library it was instructed to create s
 
 The best way to understand what the `jextract` tool does is to look at what it generates for the C stdio library.
 
-### Building from source
+### Installation
 
 As mentioned before, `jextract` is the first standalone JDK code tool that is not a part of the OpenJDK distribution.
 It means that to start working with the `jextract` tool it's necessary to obtain its binary available at [https://jdk.java.net/jextract](https://jdk.java.net/jextract).
@@ -217,9 +217,9 @@ A newly created file will contain a combination of the following option values:
 ```
 
 Using the combination of these parameters it's possible to limit the amount of code `jextract` could generate.
-For instance, the following command will create the infrastructure code only for C _puts_ native function:
+For instance, the following command will create the infrastructure code only for C _printf_ native function:
 ```shell
-jextract --source -t com.clang.stdlib.stdio -I /usr/include --output src/main/java --include-function puts /usr/include/stdio.h
+jextract --source -t com.clang.stdlib.stdio -I /usr/include --output src/main/java --include-function printf /usr/include/stdio.h
 ```
 
 Filtering helps to avoid unnecessary Java source files as well as redundant functions, macros, structs, vars, and typedefs.
@@ -232,25 +232,6 @@ jextract --source -t com.clang.stdlib.stdio -I /usr/include --output src/main/ja
 
 Note: It's essential to know what you are doing, there may be a dependency between components of a header file, like `stdio.h` `FILE` and `_sFILE` types where the `FILE` native symbol is an alias to the `sFILE` typedef.
 Excluding one may lead to problems with others.
-
-
-## Straight to the point
-
-To create the infrastructure code for C _printf_, the `jextract` tool must be instructed as follows:
-```shell
-jextract --source -t com.clang.stdlib.stdio -I /usr/include --output src/main/java --include-function printf /usr/include/stdio.h
-```
-
-As the result, the `jextract` tool will create a more compact variant of a package containing the C _printf_ function only alongside some internal helpers.
-```tree
-src/main/java/com/clang/stdlib/stdio
-├── Constants$root.java
-├── RuntimeHelper.java
-├── constants$0.java
-└── stdio_h.java
-
-0 directories, 4 files
-```
 
 Generated Java sources will contain the bare minimum code necessary to invoke the C _printf_ function, a descriptor, and a method handle:
 ```java
